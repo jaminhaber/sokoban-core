@@ -1,4 +1,4 @@
-use nalgebra::Vector2;
+use soukoban::Vec2;
 use soukoban::{solver::*, Level};
 
 mod utils;
@@ -25,7 +25,7 @@ fn test_solver() {
 fn print_lower_bounds(solver: &Solver) {
     for y in 0..solver.map().dimensions().y {
         for x in 0..solver.map().dimensions().x {
-            let position = Vector2::new(x, y);
+            let position = Vec2::new(x, y);
             if let Some(lower_bound) = solver.lower_bounds().get(&position) {
                 print!("{:3} ", lower_bound);
             } else {

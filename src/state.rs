@@ -3,9 +3,8 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
 };
 
-use nalgebra::Vector2;
-
 use crate::{
+    math::Vec2,
     path_finding::{normalized_area, reachable_area},
     solver::Solver,
     Map, Tiles,
@@ -13,8 +12,8 @@ use crate::{
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct State {
-    pub player_position: Vector2<i32>,
-    pub box_positions: HashSet<Vector2<i32>>,
+    pub player_position: Vec2,
+    pub box_positions: HashSet<Vec2>,
 }
 
 impl State {

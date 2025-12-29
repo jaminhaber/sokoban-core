@@ -6,9 +6,7 @@ use std::{
     str::FromStr,
 };
 
-use nalgebra::Vector2;
-
-use crate::{action::Action, error::ParseActionsError, run_length::rle_decode};
+use crate::{action::Action, error::ParseActionsError, math::Vec2, run_length::rle_decode};
 
 /// Secondary statistics for a sequence of actions.
 pub struct SecondaryValues {
@@ -49,7 +47,7 @@ impl Actions {
         let mut pushing_sessions = 0;
         let mut player_lines = 0;
 
-        let mut player_position = Vector2::zeros();
+        let mut player_position = Vec2::zeros();
         let mut prev_pushed_box_position = None;
         let mut prev_action: Option<Action> = None;
         for action in &self.0 {

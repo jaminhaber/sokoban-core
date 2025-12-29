@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use indoc::indoc;
-use nalgebra::Vector2;
+use soukoban::Vec2;
 use soukoban::{tiles::Tiles, Actions, Map, ParseMapError};
 
 mod utils;
@@ -93,7 +93,7 @@ fn get() {
     let mut map: Map = load_level_from_file("assets/Holland_81.xsb", 9).into();
     for x in 0..map.dimensions().x {
         for y in 0..map.dimensions().y {
-            let position = Vector2::new(x, y);
+            let position = Vec2::new(x, y);
             let tiles = map[position];
             assert_eq!(tiles, *map.get(position).unwrap());
             assert_eq!(tiles, unsafe { *map.get_unchecked(position) });
@@ -126,7 +126,7 @@ fn display() {
     let mut map = load_level_from_file("assets/Holland_81.xsb", 9)
         .map()
         .clone();
-    map[Vector2::new(4, 2)].insert(Tiles::Player);
+    map[Vec2::new(4, 2)].insert(Tiles::Player);
     assert_eq!(
         map.to_string(),
         indoc! {"
