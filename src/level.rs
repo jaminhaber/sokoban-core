@@ -73,11 +73,6 @@ impl Level {
 
     /// Moves the player in the specified direction.
     pub fn do_action(&mut self, direction: Direction) -> Result<(), ActionError> {
-        if self.actions.last() == Some(&Action::Move(-direction)) {
-            self.undo_action().unwrap();
-            return Ok(());
-        }
-
         let new_player_position = self.map.player_position() + &direction.into();
         if self.map[new_player_position].intersects(Tiles::Wall) {
             return Err(ActionError::MoveBlocked);
