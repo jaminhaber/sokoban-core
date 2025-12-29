@@ -106,6 +106,21 @@ impl Vector2 {
             y: f(self.y, other.y),
         }
     }
+
+    /// Returns the sum of all components.
+    pub fn sum(self) -> i32 {
+        self.x + self.y
+    }
+
+    /// Returns an iterator over the components [x, y].
+    pub fn iter(&self) -> impl Iterator<Item = &i32> {
+        [&self.x, &self.y].into_iter()
+    }
+
+    /// Returns a mutable iterator over the components [x, y].
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut i32> {
+        [&mut self.x, &mut self.y].into_iter()
+    }
 }
 
 impl Add for Vector2 {
