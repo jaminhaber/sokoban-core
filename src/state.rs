@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    math::Vector2,
+    math::IVector2,
     path_finding::{normalized_area, reachable_area},
     solver::Solver,
     Map, Tiles,
@@ -12,8 +12,8 @@ use crate::{
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct State {
-    pub player_position: Vector2,
-    pub box_positions: HashSet<Vector2>,
+    pub player_position: IVector2,
+    pub box_positions: HashSet<IVector2>,
 }
 
 impl State {

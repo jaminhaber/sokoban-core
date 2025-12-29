@@ -2,7 +2,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::{direction::Direction, map::Map, math::Vector2, tiles::Tiles};
+use crate::{direction::Direction, map::Map, math::IVector2, tiles::Tiles};
 
 /// Checks if the given box position is a static deadlock.
 ///
@@ -10,9 +10,9 @@ use crate::{direction::Direction, map::Map, math::Vector2, tiles::Tiles};
 /// compute multiple static deadlock positions.
 pub fn is_static_deadlock(
     map: &Map,
-    box_position: Vector2,
-    box_positions: &HashSet<Vector2>,
-    visited: &mut HashSet<Vector2>,
+    box_position: IVector2,
+    box_positions: &HashSet<IVector2>,
+    visited: &mut HashSet<IVector2>,
 ) -> bool {
     debug_assert!(box_positions.contains(&box_position));
 
@@ -51,9 +51,9 @@ pub fn is_static_deadlock(
 /// Checks if the given box position is a freeze deadlock.
 pub fn is_freeze_deadlock(
     map: &Map,
-    box_position: Vector2,
-    box_positions: &HashSet<Vector2>,
-    visited: &mut HashSet<Vector2>,
+    box_position: IVector2,
+    box_positions: &HashSet<IVector2>,
+    visited: &mut HashSet<IVector2>,
 ) -> bool {
     debug_assert!(box_positions.contains(&box_position));
 
@@ -98,11 +98,11 @@ pub fn is_freeze_deadlock(
 /// This function returns an **incomplete** set of dead positions independent
 /// of the player's position. Any box pushed to a point in the set will cause a
 /// deadlock, regardless of the player's position.
-pub fn calculate_static_deadlocks(map: &Map) -> HashSet<Vector2> {
+pub fn calculate_static_deadlocks(map: &Map) -> HashSet<IVector2> {
     let mut dead_positions = HashSet::new();
     for x in 1..map.dimensions().x - 1 {
         for y in 1..map.dimensions().y - 1 {
-            let position = Vector2::new(x, y);
+            let position = IVector2::new(x, y);
             // Check if current position may be a new corner
             if !map[position].intersects(Tiles::Floor) || map[position].intersects(Tiles::Goal) {
                 continue;
@@ -150,14 +150,14 @@ pub fn calculate_static_deadlocks(map: &Map) -> HashSet<Vector2> {
 }
 
 /// Calculate the positions of the useless floors.
-pub fn calculate_useless_floors(mut map: Map) -> HashSet<Vector2> {
+pub fn calculate_useless_floors(mut map: Map) -> HashSet<IVector2> {
     let mut useless_floors = HashSet::new();
 
     // Add all floors to `unchecked_floors`
     let mut unchecked_floors = VecDeque::new();
     for y in 1..map.dimensions().y - 1 {
         for x in 1..map.dimensions().x - 1 {
-            let position = Vector2::new(x, y);
+            let position = IVector2::new(x, y);
             if map[position] == Tiles::Floor {
                 unchecked_floors.push_back(position);
             }
@@ -195,7 +195,7 @@ pub fn calculate_useless_floors(mut map: Map) -> HashSet<Vector2> {
 }
 
 /// Calculate the positions of the useless boxes.
-pub fn calculate_useless_boxes(map: &Map) -> HashSet<Vector2> {
+pub fn calculate_useless_boxes(map: &Map) -> HashSet<IVector2> {
     map.box_positions()
         .iter()
         .cloned()
