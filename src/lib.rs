@@ -9,7 +9,6 @@ pub mod direction;
 pub mod error;
 pub mod level;
 pub mod map;
-/// A 2D vector type for grid positions.
 pub mod math;
 pub mod path_finding;
 pub mod run_length;
@@ -21,6 +20,7 @@ mod state;
 
 pub use action::*;
 pub use actions::*;
+pub use direction::*;
 pub use error::*;
 pub use level::*;
 pub use map::*;
