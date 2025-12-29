@@ -1,8 +1,9 @@
 //! A level.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt,
+    hash::{DefaultHasher, Hash, Hasher},
     io::BufRead,
     str::FromStr,
 };
@@ -24,19 +25,22 @@ use crate::{
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Level {
     map: Map,
-    metadata: HashMap<String, String>,
+    metadata: BTreeMap<String, String>,
     actions: Actions,
     undone_actions: Actions,
+    map_hash: u64,
 }
 
 impl Level {
     /// Creates a new `Level` from map.
     pub fn from_map(map: Map) -> Self {
+        let map_hash = calculate_hash(&map);
         Self {
             map,
-            metadata: HashMap::new(),
+            metadata: BTreeMap::new(),
             actions: Actions::default(),
             undone_actions: Actions::default(),
+            map_hash,
         }
     }
 
@@ -51,13 +55,18 @@ impl Level {
     }
 
     /// Returns a reference to the metadata of the level.
-    pub fn metadata(&self) -> &HashMap<String, String> {
+    pub fn metadata(&self) -> &BTreeMap<String, String> {
         &self.metadata
     }
 
     /// Returns a reference to the actions of the level.
     pub fn actions(&self) -> &Actions {
         &self.actions
+    }
+
+    /// Returns the hash of the map of the level.
+    pub fn map_hash(&self) -> u64 {
+        self.map_hash
     }
 
     /// Performs a sequence of actions on the level.
@@ -218,7 +227,6 @@ impl Level {
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.map)?;
-        self.metadata.iter();
         for key in self.metadata.keys().sorted() {
             let value = &self.metadata[key];
             if key == "comments" && value.lines().count() > 1 {
@@ -248,7 +256,7 @@ impl FromStr for Level {
     fn from_str(xsb: &str) -> Result<Self, Self::Err> {
         let mut map_offset = 0;
         let mut map_len = 0;
-        let mut metadata = HashMap::new();
+        let mut metadata = BTreeMap::new();
         let mut comments = String::new();
         let mut in_block_comment = false;
         for line in xsb.split_inclusive(['\n', '|']) {
@@ -330,11 +338,15 @@ impl FromStr for Level {
             return Err(ParseLevelError::NoMap);
         }
 
+        let map = Map::from_str(&xsb[map_offset..map_offset + map_len])?;
+        let map_hash = calculate_hash(&map);
+
         Ok(Self {
-            map: Map::from_str(&xsb[map_offset..map_offset + map_len])?,
+            map,
             metadata,
             actions: Actions::default(),
             undone_actions: Actions::default(),
+            map_hash,
         })
     }
 }
@@ -426,4 +438,11 @@ fn is_xsb_symbol(char: char) -> bool {
 
 fn is_xsb_symbol_with_rle(char: char) -> bool {
     is_xsb_symbol(char) || char::is_ascii_digit(&char) || char == '|'
+}
+
+/// Hashes a value using the default hasher.
+pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }

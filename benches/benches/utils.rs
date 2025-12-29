@@ -1,4 +1,4 @@
-use soukoban::Level;
+use sokoban_core::Level;
 use std::{fs, path::Path};
 
 pub fn load_level_from_file<P: AsRef<Path>>(path: P, id: usize) -> Level {

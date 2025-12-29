@@ -1,5 +1,5 @@
-use soukoban::IVector2;
-use soukoban::{solver::*, Level};
+use sokoban_core::IVector2;
+use sokoban_core::{solver::*, Level};
 
 mod utils;
 use utils::*;

@@ -7,9 +7,9 @@ use crate::math::IVector2;
 /// A direction.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub enum Direction {
-    /// Upward direction (negative Y-axis).
+    /// Upward direction (positive Y-axis).
     Up,
-    /// Downward direction (positive Y-axis).
+    /// Downward direction (negative Y-axis).
     Down,
     /// Leftward direction (negative X-axis).
     Left,
@@ -28,7 +28,7 @@ impl Direction {
     /// # Examples
     ///
     /// ```
-    /// # use soukoban::direction::Direction;
+    /// # use sokoban_core::direction::Direction;
     /// assert_eq!(Direction::Up.rotate(), Direction::Right);
     ///
     /// // Rotate the direction 90° counter clockwis.
@@ -48,7 +48,7 @@ impl Direction {
     /// # Examples
     ///
     /// ```
-    /// # use soukoban::direction::Direction;
+    /// # use sokoban_core::direction::Direction;
     /// assert_eq!(Direction::Left.flip(), Direction::Right);
     /// assert_eq!(Direction::Up.flip(), Direction::Down);
     /// ```
@@ -74,8 +74,8 @@ impl From<Direction> for IVector2 {
     fn from(direction: Direction) -> Self {
         use Direction as E;
         match direction {
-            E::Up => -IVector2::unit_y(),
-            E::Down => IVector2::unit_y(),
+            E::Up => IVector2::unit_y(),
+            E::Down => -IVector2::unit_y(),
             E::Left => -IVector2::unit_x(),
             E::Right => IVector2::unit_x(),
         }
@@ -88,8 +88,8 @@ impl TryFrom<IVector2> for Direction {
     fn try_from(vector: IVector2) -> Result<Self, Self::Error> {
         use Direction::*;
         match vector {
-            v if v == -IVector2::unit_y() => Ok(Up),
-            v if v == IVector2::unit_y() => Ok(Down),
+            v if v == IVector2::unit_y() => Ok(Up),
+            v if v == -IVector2::unit_y() => Ok(Down),
             v if v == -IVector2::unit_x() => Ok(Left),
             v if v == IVector2::unit_x() => Ok(Right),
             _ => Err(()),

@@ -10,7 +10,7 @@ use crate::error::{DecodeRleError, EncodeRleError};
 /// # use std::error::Error;
 /// #
 /// # fn main() -> Result<(), Box<dyn Error>> {
-/// use soukoban::run_length::rle_encode;
+/// use sokoban_core::run_length::rle_encode;
 ///
 /// assert_eq!(rle_encode("aaabbbcdd")?, "3a3bc2d");
 /// #
@@ -45,7 +45,7 @@ pub fn rle_encode(str: &str) -> Result<String, EncodeRleError> {
 /// # use std::error::Error;
 /// #
 /// # fn main() -> Result<(), Box<dyn Error>> {
-/// use soukoban::run_length::rle_decode;
+/// use sokoban_core::run_length::rle_decode;
 ///
 /// assert_eq!(rle_decode("-#$.*+@")?, "-#$.*+@");
 /// assert_eq!(rle_decode("3-##3(.$2(+*))-#")?, "---##.$+*+*.$+*+*.$+*+*-#");

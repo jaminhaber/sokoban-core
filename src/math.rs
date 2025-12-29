@@ -1,3 +1,5 @@
+//! A 2D vector type for grid positions.
+
 use std::ops::{Add, AddAssign, Index, IndexMut, Neg, Sub, SubAssign};
 
 /// A 2D vector with integer components.

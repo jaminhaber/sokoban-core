@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use soukoban::path_finding::*;
-use soukoban::IVector2;
+use sokoban_core::path_finding::*;
+use sokoban_core::IVector2;
 
 mod utils;
 use utils::*;
