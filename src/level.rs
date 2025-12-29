@@ -1,7 +1,7 @@
 //! A level.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt,
     hash::{DefaultHasher, Hash, Hasher},
     io::BufRead,
@@ -25,7 +25,7 @@ use crate::{
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Level {
     map: Map,
-    metadata: HashMap<String, String>,
+    metadata: BTreeMap<String, String>,
     actions: Actions,
     undone_actions: Actions,
     map_hash: u64,
@@ -37,7 +37,7 @@ impl Level {
         let map_hash = calculate_hash(&map);
         Self {
             map,
-            metadata: HashMap::new(),
+            metadata: BTreeMap::new(),
             actions: Actions::default(),
             undone_actions: Actions::default(),
             map_hash,
@@ -55,7 +55,7 @@ impl Level {
     }
 
     /// Returns a reference to the metadata of the level.
-    pub fn metadata(&self) -> &HashMap<String, String> {
+    pub fn metadata(&self) -> &BTreeMap<String, String> {
         &self.metadata
     }
 
@@ -227,7 +227,6 @@ impl Level {
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.map)?;
-        self.metadata.iter();
         for key in self.metadata.keys().sorted() {
             let value = &self.metadata[key];
             if key == "comments" && value.lines().count() > 1 {
@@ -257,7 +256,7 @@ impl FromStr for Level {
     fn from_str(xsb: &str) -> Result<Self, Self::Err> {
         let mut map_offset = 0;
         let mut map_len = 0;
-        let mut metadata = HashMap::new();
+        let mut metadata = BTreeMap::new();
         let mut comments = String::new();
         let mut in_block_comment = false;
         for line in xsb.split_inclusive(['\n', '|']) {
