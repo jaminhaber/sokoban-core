@@ -304,14 +304,16 @@ impl Map {
     /// Rotates the map 90° clockwise.
     pub fn rotate(&mut self) {
         let dimensions = self.dimensions;
-        let rotate_position = |position: IVector2| IVector2::new(position.y, dimensions.x - 1 - position.x);
+        let rotate_position =
+            |position: IVector2| IVector2::new(position.y, dimensions.x - 1 - position.x);
         self.transform(rotate_position, self.dimensions.yx());
     }
 
     /// Flips the map horizontally.
     pub fn flip(&mut self) {
         let dimensions = self.dimensions;
-        let flip_position = |position: IVector2| IVector2::new(dimensions.x - 1 - position.x, position.y);
+        let flip_position =
+            |position: IVector2| IVector2::new(dimensions.x - 1 - position.x, position.y);
         self.transform(flip_position, self.dimensions);
     }
 
@@ -422,7 +424,11 @@ impl Map {
     }
 
     /// Transforms the map based on the provided operation and new dimensions.
-    fn transform(&mut self, operation: impl Fn(IVector2) -> IVector2 + Copy, new_dimensions: IVector2) {
+    fn transform(
+        &mut self,
+        operation: impl Fn(IVector2) -> IVector2 + Copy,
+        new_dimensions: IVector2,
+    ) {
         let mut transformed_map = Map::with_dimensions(new_dimensions);
         for x in 0..self.dimensions.x {
             for y in 0..self.dimensions.y {

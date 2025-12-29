@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt,
+    hash::{DefaultHasher, Hash, Hasher},
     io::BufRead,
     str::FromStr,
 };
@@ -27,16 +28,19 @@ pub struct Level {
     metadata: HashMap<String, String>,
     actions: Actions,
     undone_actions: Actions,
+    map_hash: u64,
 }
 
 impl Level {
     /// Creates a new `Level` from map.
     pub fn from_map(map: Map) -> Self {
+        let map_hash = calculate_hash(&map);
         Self {
             map,
             metadata: HashMap::new(),
             actions: Actions::default(),
             undone_actions: Actions::default(),
+            map_hash,
         }
     }
 
@@ -330,11 +334,15 @@ impl FromStr for Level {
             return Err(ParseLevelError::NoMap);
         }
 
+        let map = Map::from_str(&xsb[map_offset..map_offset + map_len])?;
+        let map_hash = calculate_hash(&map);
+
         Ok(Self {
-            map: Map::from_str(&xsb[map_offset..map_offset + map_len])?,
+            map,
             metadata,
             actions: Actions::default(),
             undone_actions: Actions::default(),
+            map_hash,
         })
     }
 }
@@ -426,4 +434,11 @@ fn is_xsb_symbol(char: char) -> bool {
 
 fn is_xsb_symbol_with_rle(char: char) -> bool {
     is_xsb_symbol(char) || char::is_ascii_digit(&char) || char == '|'
+}
+
+/// Hashes a value using the default hasher.
+pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
 }

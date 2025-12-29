@@ -30,7 +30,11 @@ impl PartialOrd for Node {
 /// This function uses the A* algorithm to find the shortest path from the
 /// starting position to the target position, based on the provided `can_move`
 /// function.
-pub fn find_path(from: IVector2, to: IVector2, can_move: impl Fn(IVector2) -> bool) -> Option<Vec<IVector2>> {
+pub fn find_path(
+    from: IVector2,
+    to: IVector2,
+    can_move: impl Fn(IVector2) -> bool,
+) -> Option<Vec<IVector2>> {
     let mut open_set = BinaryHeap::new();
     let mut came_from = HashMap::new();
     let mut cost = HashMap::new();
@@ -68,7 +72,11 @@ pub fn find_path(from: IVector2, to: IVector2, can_move: impl Fn(IVector2) -> bo
     None
 }
 
-fn construct_path(from: IVector2, to: IVector2, came_from: HashMap<IVector2, IVector2>) -> Vec<IVector2> {
+fn construct_path(
+    from: IVector2,
+    to: IVector2,
+    came_from: HashMap<IVector2, IVector2>,
+) -> Vec<IVector2> {
     let mut path = Vec::new();
     let mut current = to;
     while current != from {
@@ -207,7 +215,11 @@ pub fn construct_box_path(
 }
 
 /// Constructs player path based on box path.
-pub fn construct_player_path(map: &Map, mut player_position: IVector2, box_path: &[IVector2]) -> Vec<IVector2> {
+pub fn construct_player_path(
+    map: &Map,
+    mut player_position: IVector2,
+    box_path: &[IVector2],
+) -> Vec<IVector2> {
     let mut path = Vec::new();
     let initial_box_position = *box_path.first().unwrap();
     for box_positions in box_path.windows(2) {
@@ -251,7 +263,10 @@ pub fn pushable_boxes(map: &Map) -> HashSet<IVector2> {
 /// This function performs a breadth-first search to determine all positions
 /// that can be reached from the starting position, based on the provided
 /// `can_move` function.
-pub fn reachable_area(position: IVector2, can_move: impl Fn(IVector2) -> bool) -> HashSet<IVector2> {
+pub fn reachable_area(
+    position: IVector2,
+    can_move: impl Fn(IVector2) -> bool,
+) -> HashSet<IVector2> {
     let mut reachable_area = HashSet::new();
     let mut deque = VecDeque::<IVector2>::new();
     deque.push_back(position);
