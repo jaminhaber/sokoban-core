@@ -64,6 +64,11 @@ impl Level {
         &self.actions
     }
 
+    /// Returns the hash of the map of the level.
+    pub fn map_hash(&self) -> u64 {
+        self.map_hash
+    }
+
     /// Performs a sequence of actions on the level.
     pub fn do_actions<I: IntoIterator<Item = Direction>>(
         &mut self,
