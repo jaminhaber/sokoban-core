@@ -6,10 +6,10 @@ use std::{
 };
 
 use itertools::Itertools;
-use nalgebra::Vector2;
 
 use crate::{
     direction::Direction,
+    math::IVector2,
     node::Node,
     path_finding::{find_path, reachable_area},
     state::State,
@@ -35,8 +35,8 @@ pub enum Strategy {
 pub struct Solver {
     map: Map,
     strategy: Strategy,
-    lower_bounds: OnceCell<HashMap<Vector2<i32>, i32>>,
-    tunnels: OnceCell<HashSet<(Vector2<i32>, Direction)>>,
+    lower_bounds: OnceCell<HashMap<IVector2, i32>>,
+    tunnels: OnceCell<HashSet<(IVector2, Direction)>>,
 }
 
 impl Solver {
@@ -126,7 +126,7 @@ impl Solver {
     }
 
     /// Returns a reference to the set of lower bounds.
-    pub fn lower_bounds(&self) -> &HashMap<Vector2<i32>, i32> {
+    pub fn lower_bounds(&self) -> &HashMap<IVector2, i32> {
         // FIXME: Calculate lower bounds based on strategy
         self.lower_bounds.get_or_init(|| {
             assert!(self.strategy == Strategy::OptimalPush || self.strategy == Strategy::Fast);
@@ -137,7 +137,7 @@ impl Solver {
     }
 
     /// Returns a reference to the set of tunnels.
-    pub fn tunnels(&self) -> &HashSet<(Vector2<i32>, Direction)> {
+    pub fn tunnels(&self) -> &HashSet<(IVector2, Direction)> {
         self.tunnels.get_or_init(|| {
             let mut tunnels = self.calculate_tunnels();
             tunnels.shrink_to_fit();
@@ -147,7 +147,7 @@ impl Solver {
 
     /// Calculates and returns the minimum number of pushes to push the box to
     /// the nearest goal.
-    fn calculate_minimum_push(&self) -> HashMap<Vector2<i32>, i32> {
+    fn calculate_minimum_push(&self) -> HashMap<IVector2, i32> {
         let mut lower_bounds = HashMap::new();
         for goal_position in self.map.goal_positions() {
             lower_bounds.insert(*goal_position, 0);
@@ -179,10 +179,10 @@ impl Solver {
     /// be pulled to and the minimum pulls it can be pulled to that position.
     fn calculate_minimum_push_to(
         &self,
-        box_position: Vector2<i32>,
-        player_position: Vector2<i32>,
-        lower_bounds: &mut HashMap<Vector2<i32>, i32>,
-        visited: &mut HashSet<(Vector2<i32>, Direction)>,
+        box_position: IVector2,
+        player_position: IVector2,
+        lower_bounds: &mut HashMap<IVector2, i32>,
+        visited: &mut HashSet<(IVector2, Direction)>,
     ) {
         let player_reachable_area = reachable_area(player_position, |position| {
             !(self.map[position].intersects(Tiles::Wall) || position == box_position)
@@ -222,11 +222,11 @@ impl Solver {
     /// Tunnel is a common type of no influence push.
     /// Since tunnels are only determined by the map terrain, they can be
     /// pre-calculated.
-    fn calculate_tunnels(&self) -> HashSet<(Vector2<i32>, Direction)> {
+    fn calculate_tunnels(&self) -> HashSet<(IVector2, Direction)> {
         let mut tunnels = HashSet::new();
         for x in 1..self.map.dimensions().x - 1 {
             for y in 1..self.map.dimensions().y - 1 {
-                let box_position = Vector2::new(x, y);
+                let box_position = IVector2::new(x, y);
                 if !self.map[box_position].intersects(Tiles::Floor) {
                     continue;
                 }
@@ -280,7 +280,7 @@ impl Solver {
             // Determine the direction of the push
             let diff = box_position - previous_box_position;
             let push_direction =
-                Direction::try_from(Vector2::new(diff.x.signum(), diff.y.signum())).unwrap();
+                Direction::try_from(IVector2::new(diff.x.signum(), diff.y.signum())).unwrap();
 
             // Find the path for the player to reach the box position before pushing it
             let mut new_actions: Vec<_> = find_path(

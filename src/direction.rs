@@ -2,7 +2,7 @@
 
 use std::ops::Neg;
 
-use nalgebra::Vector2;
+use crate::math::IVector2;
 
 /// A direction.
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
@@ -70,28 +70,28 @@ impl Neg for Direction {
     }
 }
 
-impl From<Direction> for Vector2<i32> {
+impl From<Direction> for IVector2 {
     fn from(direction: Direction) -> Self {
         use Direction as E;
         match direction {
-            E::Up => -Vector2::y(),
-            E::Down => Vector2::y(),
-            E::Left => -Vector2::x(),
-            E::Right => Vector2::x(),
+            E::Up => -IVector2::unit_y(),
+            E::Down => IVector2::unit_y(),
+            E::Left => -IVector2::unit_x(),
+            E::Right => IVector2::unit_x(),
         }
     }
 }
 
-impl TryFrom<Vector2<i32>> for Direction {
+impl TryFrom<IVector2> for Direction {
     type Error = ();
 
-    fn try_from(vector: Vector2<i32>) -> Result<Self, Self::Error> {
+    fn try_from(vector: IVector2) -> Result<Self, Self::Error> {
         use Direction::*;
         match vector {
-            v if v == -Vector2::<i32>::y() => Ok(Up),
-            v if v == Vector2::<i32>::y() => Ok(Down),
-            v if v == -Vector2::<i32>::x() => Ok(Left),
-            v if v == Vector2::<i32>::x() => Ok(Right),
+            v if v == -IVector2::unit_y() => Ok(Up),
+            v if v == IVector2::unit_y() => Ok(Down),
+            v if v == -IVector2::unit_x() => Ok(Left),
+            v if v == IVector2::unit_x() => Ok(Right),
             _ => Err(()),
         }
     }

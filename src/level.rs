@@ -8,7 +8,6 @@ use std::{
 };
 
 use itertools::Itertools;
-use nalgebra::Vector2;
 
 use crate::{
     action::Action,
@@ -16,6 +15,7 @@ use crate::{
     direction::Direction,
     error::{ActionError, ParseLevelError, ParseMapError},
     map::Map,
+    math::IVector2,
     path_finding::reachable_area,
     tiles::Tiles,
 };
@@ -73,11 +73,6 @@ impl Level {
 
     /// Moves the player in the specified direction.
     pub fn do_action(&mut self, direction: Direction) -> Result<(), ActionError> {
-        if self.actions.last() == Some(&Action::Move(-direction)) {
-            self.undo_action().unwrap();
-            return Ok(());
-        }
-
         let new_player_position = self.map.player_position() + &direction.into();
         if self.map[new_player_position].intersects(Tiles::Wall) {
             return Err(ActionError::MoveBlocked);
@@ -133,7 +128,7 @@ impl Level {
     }
 
     /// Returns the reachable area for the player.
-    pub fn player_reachable_area(&self) -> HashSet<Vector2<i32>> {
+    pub fn player_reachable_area(&self) -> HashSet<IVector2> {
         reachable_area(self.map.player_position(), |position| {
             self.map.can_move(position)
         })

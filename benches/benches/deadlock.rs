@@ -1,5 +1,5 @@
-use std::str::FromStr;
 use std::hint::black_box;
+use std::str::FromStr;
 
 use criterion::{criterion_group, Criterion};
 use soukoban::{deadlock, Map};

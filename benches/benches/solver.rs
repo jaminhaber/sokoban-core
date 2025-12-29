@@ -29,27 +29,25 @@ fn a_star_search(c: &mut Criterion) {
     bench_solve(level);
 }
 
-/*
-fn ida_star_search(c: &mut Criterion) {
-    let mut bench_solve = |level: Level| {
-        c.bench_function(
-            &format!("Solver::ida_star_search '{}'", level.metadata()["title"]),
-            |b| {
-                let solver = black_box(Solver::new(level.map().clone(), Strategy::Fast));
-                b.iter(|| {
-                    solver.ida_star_search().unwrap();
-                })
-            },
-        );
-    };
-
-    let level = Level::from_str(PATH).unwrap();
-    bench_solve(level);
-
-    let level = load_level_from_file("assets/BoxWorld_100.xsb", 3);
-    bench_solve(level);
-}
-*/
+// fn ida_star_search(c: &mut Criterion) {
+// let mut bench_solve = |level: Level| {
+// c.bench_function(
+// &format!("Solver::ida_star_search '{}'", level.metadata()["title"]),
+// |b| {
+// let solver = black_box(Solver::new(level.map().clone(), Strategy::Fast));
+// b.iter(|| {
+// solver.ida_star_search().unwrap();
+// })
+// },
+// );
+// };
+//
+// let level = Level::from_str(PATH).unwrap();
+// bench_solve(level);
+//
+// let level = load_level_from_file("assets/BoxWorld_100.xsb", 3);
+// bench_solve(level);
+// }
 
 fn tunnels(c: &mut Criterion) {
     let level = Level::from_str(PATH).unwrap();
