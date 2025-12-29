@@ -518,7 +518,7 @@ impl FromStr for Map {
 
         // Parse map data
         let mut player_position = None;
-        for (y, line) in buf.lines().enumerate() {
+        for (y, line) in buf.lines().rev().enumerate() {
             // Trim map indentation
             let line = &line[indent as usize..];
             for (x, char) in line.chars().enumerate() {
@@ -602,7 +602,7 @@ impl Hash for Map {
 
 impl fmt::Display for Map {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for y in 0..self.dimensions.y {
+        for y in (0..self.dimensions.y).rev() {
             for x in 0..self.dimensions.x {
                 write!(f, "{}", self[IVector2::new(x, y)])?;
             }

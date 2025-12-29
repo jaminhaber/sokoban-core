@@ -126,7 +126,7 @@ fn display() {
     let mut map = load_level_from_file("assets/Holland_81.xsb", 9)
         .map()
         .clone();
-    map[IVector2::new(4, 2)].insert(Tiles::Player);
+    map[IVector2::new(4, 6)].insert(Tiles::Player);
     assert_eq!(
         map.to_string(),
         indoc! {"
