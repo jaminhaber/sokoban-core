@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
 use indoc::indoc;
-use soukoban::IVector2;
-use soukoban::{tiles::Tiles, Actions, Map, ParseMapError};
+use sokoban_core::IVector2;
+use sokoban_core::{tiles::Tiles, Actions, Map, ParseMapError};
 
 mod utils;
 use utils::*;

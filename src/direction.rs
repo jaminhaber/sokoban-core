@@ -28,7 +28,7 @@ impl Direction {
     /// # Examples
     ///
     /// ```
-    /// # use soukoban::direction::Direction;
+    /// # use sokoban_core::direction::Direction;
     /// assert_eq!(Direction::Up.rotate(), Direction::Right);
     ///
     /// // Rotate the direction 90° counter clockwis.
@@ -48,7 +48,7 @@ impl Direction {
     /// # Examples
     ///
     /// ```
-    /// # use soukoban::direction::Direction;
+    /// # use sokoban_core::direction::Direction;
     /// assert_eq!(Direction::Left.flip(), Direction::Right);
     /// assert_eq!(Direction::Up.flip(), Direction::Down);
     /// ```

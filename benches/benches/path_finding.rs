@@ -2,8 +2,8 @@ use std::hint::black_box;
 use std::str::FromStr;
 
 use criterion::{criterion_group, Criterion};
-use soukoban::IVector2;
-use soukoban::{path_finding, Level};
+use sokoban_core::IVector2;
+use sokoban_core::{path_finding, Level};
 
 use super::utils::*;
 

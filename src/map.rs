@@ -317,6 +317,14 @@ impl Map {
         self.transform(flip_position, self.dimensions);
     }
 
+    /// Flips the map vertically.
+    pub fn flip_vertical(&mut self) {
+        let dimensions = self.dimensions;
+        let flip_position =
+            |position: IVector2| IVector2::new(position.x, dimensions.y - 1 - position.y);
+        self.transform(flip_position, self.dimensions);
+    }
+
     /// Adds a box at the given position.
     fn add_box_position(&mut self, position: IVector2) {
         debug_assert!(

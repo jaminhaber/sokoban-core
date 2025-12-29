@@ -1,10 +1,6 @@
-# soukoban
+# Sokoban Core
 
-<!-- [![docs.rs](https://img.shields.io/docsrs/soukoban)](https://docs.rs/soukoban)
-[![Test status](https://img.shields.io/github/actions/workflow/status/ShenMian/soukoban/test.yml?label=test)](https://github.com/ShenMian/soukoban/actions/workflows/test.yml)
-[![Code coverage](https://img.shields.io/codecov/c/github/ShenMian/soukoban)](https://app.codecov.io/gh/ShenMian/soukoban) -->
-
-A library provides the implementation of algorithms and data structures related to [Sokoban]. Forked from https://github.com/ShenMian/soukoban
+A library provides the implementation of algorithms and data structures related to [Sokoban]. Forked from https://github.com/ShenMian/sokoban_core
 
 ## Features
 

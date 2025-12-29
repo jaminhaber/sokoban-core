@@ -2,7 +2,7 @@ use std::hint::black_box;
 use std::str::FromStr;
 
 use criterion::{criterion_group, Criterion};
-use soukoban::Map;
+use sokoban_core::Map;
 
 use super::utils::*;
 

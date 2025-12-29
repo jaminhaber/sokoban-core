@@ -1,4 +1,4 @@
-use soukoban::{error::*, run_length::*};
+use sokoban_core::{error::*, run_length::*};
 
 #[test]
 fn rle_encode_empty() {

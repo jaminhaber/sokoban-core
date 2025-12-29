@@ -37,7 +37,7 @@ jobs:
         run: cargo doc --no-deps
 
       - name: Add redirect
-        run: echo '<meta http-equiv="refresh" content="0;url=soukoban/index.html">' > target/doc/index.html
+        run: echo '<meta http-equiv="refresh" content="0;url=sokoban_core/index.html">' > target/doc/index.html
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3

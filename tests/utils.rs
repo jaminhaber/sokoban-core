@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use soukoban::Level;
+use sokoban_core::Level;
 
 pub fn load_level_from_file<P: AsRef<Path>>(path: P, id: usize) -> Level {
     debug_assert!(id >= 1);
