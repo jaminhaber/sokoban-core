@@ -44,6 +44,11 @@ impl Level {
         }
     }
 
+    /// Sets the metadata of the level.
+    pub fn set_metadata(&mut self, value: impl Into<BTreeMap<String, String>>) {
+        self.metadata = value.into();
+    }
+
     /// Returns a reference to the map of the level.
     pub fn map(&self) -> &Map {
         &self.map
