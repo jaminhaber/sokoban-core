@@ -96,6 +96,7 @@ impl Collection {
         // Add header
         if !self.header.is_empty() {
             output.push_str(&self.header);
+            output.push('\n');
         }
 
         // Add each level
