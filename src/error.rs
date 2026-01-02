@@ -105,3 +105,11 @@ pub enum ActionError {
     #[error("no undone actions")]
     NoUndoneActions,
 }
+
+/// An error which can be returned when managing a collection.
+#[derive(Error, Clone, Eq, PartialEq, Debug)]
+pub enum CollectionError {
+    /// Index is out of bounds for the collection.
+    #[error("index out of bounds")]
+    IndexOutOfBounds,
+}
