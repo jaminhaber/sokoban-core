@@ -5,6 +5,7 @@ use itertools::Itertools;
 use std::fmt;
 
 /// A collection of maps.
+ #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Collection {
     header: String,
     levels: Vec<Level>,
