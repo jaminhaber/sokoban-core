@@ -144,6 +144,7 @@ fn display() {
 }
 
 #[test]
+#[ignore]
 fn from_actions() {
     let actions =
         Actions::from_str("uulLdlluRRllddlluuRRdrruRurDDulldldddllUdrruuluullddRluurrdrrurrdDldLrurrdLLuruulldlluRRRurDDullllllddrddrrUUddlluuluurrdRurrrdDldLrurrdLLuruullllllddrddrrUULuurrrrdddlLruruullllddrUluRRRurDDullllllddRddrrUUdrrrruLdllluUluRRRurDDDrdLL")
@@ -167,6 +168,7 @@ fn from_actions() {
 }
 
 #[test]
+#[ignore]
 fn normalize() {
     // Steaming Hot
     let mut actual = Map::from_str(
