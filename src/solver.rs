@@ -53,14 +53,26 @@ pub enum Terminator {
     Iterations(u64),
 }
 
+impl Terminator {
+    /// Creates a new `Terminator` that terminates after the specified number of
+    /// iterations.
+    pub fn new_iterations(max_iterations: u64) -> Self {
+        Self::Iterations(max_iterations)
+    }
+
+    /// Creates a new `Terminator` that terminates after the specified number of
+    /// seconds.
+    pub fn new_duration_secs(secs: u64) -> Self {
+        Self::Timeout(Duration::from_secs(secs))
+    }
+}
+
 /// Internal result type for IDA* search to distinguish between
 /// threshold updates and termination.
 enum IDAStarResult {
     NewThreshold(i32),
     Terminated,
 }
-
-
 
 impl Solver {
     /// Creates a new `Solver`.
@@ -140,7 +152,13 @@ impl Solver {
         let mut iterations: u64 = 0;
 
         loop {
-            match self.ida_star_search_inner(&node, threshold, &mut HashSet::new(), start_time, &mut iterations) {
+            match self.ida_star_search_inner(
+                &node,
+                threshold,
+                &mut HashSet::new(),
+                start_time,
+                &mut iterations,
+            ) {
                 Ok(()) => return Ok(()),
                 Err(IDAStarResult::NewThreshold(t)) => threshold = t,
                 Err(IDAStarResult::Terminated) => return Err(SearchError::Terminated),
@@ -186,7 +204,13 @@ impl Solver {
         }
         let mut min_threshold = i32::MAX;
         for successor in node.successors(self) {
-            match self.ida_star_search_inner(&successor, push_threshold, visited, start_time, iterations) {
+            match self.ida_star_search_inner(
+                &successor,
+                push_threshold,
+                visited,
+                start_time,
+                iterations,
+            ) {
                 Ok(()) => return Ok(()),
                 Err(IDAStarResult::NewThreshold(t)) => min_threshold = min_threshold.min(t),
                 Err(IDAStarResult::Terminated) => return Err(IDAStarResult::Terminated),
