@@ -87,6 +87,9 @@ pub enum SearchError {
     /// No solution found.
     #[error("no solution found")]
     NoSolution,
+    /// Search was terminated early (timeout or iteration limit reached).
+    #[error("search terminated")]
+    Terminated,
 }
 
 /// An error which can be returned when level do/undo/redo actions.
