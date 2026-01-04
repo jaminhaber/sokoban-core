@@ -3,6 +3,7 @@
 use std::{
     cell::OnceCell,
     collections::{BinaryHeap, HashMap, HashSet},
+    time::Duration,
 };
 
 use itertools::Itertools;
@@ -37,7 +38,29 @@ pub struct Solver {
     strategy: Strategy,
     lower_bounds: OnceCell<HashMap<IVector2, i32>>,
     tunnels: OnceCell<HashSet<(IVector2, Direction)>>,
+    terminator: Terminator,
 }
+
+/// How to terminate the search.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
+pub enum Terminator {
+    /// Never terminate.
+    #[default]
+    None,
+    /// Terminate after a timeout.
+    Timeout(Duration),
+    /// Terminate after a number of iterations.
+    Iterations(u64),
+}
+
+/// Internal result type for IDA* search to distinguish between
+/// threshold updates and termination.
+enum IDAStarResult {
+    NewThreshold(i32),
+    Terminated,
+}
+
+
 
 impl Solver {
     /// Creates a new `Solver`.
@@ -47,7 +70,21 @@ impl Solver {
             strategy,
             lower_bounds: OnceCell::new(),
             tunnels: OnceCell::new(),
+            terminator: Terminator::None,
         }
+    }
+
+    /// Sets the terminator for the solver.
+    ///
+    /// The terminator controls when the search should be stopped early.
+    pub fn with_terminator(mut self, terminator: Terminator) -> Self {
+        self.terminator = terminator;
+        self
+    }
+
+    /// Returns the terminator.
+    pub fn terminator(&self) -> Terminator {
+        self.terminator
     }
 
     /// Searches for solution using the A* algorithm.
@@ -59,7 +96,26 @@ impl Solver {
         let state: State = self.map.clone().into();
         heap.push(Node::new(state, 0, 0, self));
 
+        let start_time = std::time::Instant::now();
+        let mut iterations: u64 = 0;
+
         while let Some(node) = heap.pop() {
+            // Check termination conditions
+            match self.terminator {
+                Terminator::None => {}
+                Terminator::Timeout(duration) => {
+                    if start_time.elapsed() >= duration {
+                        return Err(SearchError::Terminated);
+                    }
+                }
+                Terminator::Iterations(max_iterations) => {
+                    if iterations >= max_iterations {
+                        return Err(SearchError::Terminated);
+                    }
+                }
+            }
+            iterations += 1;
+
             if node.state.is_solved(self) {
                 return Ok(self.construct_actions(node.state, &came_from));
             }
@@ -79,10 +135,15 @@ impl Solver {
         let state: State = self.map.clone().into();
         let mut threshold = state.heuristic(self);
         let node = Node::new(state, 0, 0, self);
+
+        let start_time = std::time::Instant::now();
+        let mut iterations: u64 = 0;
+
         loop {
-            match self.ida_star_search_inner(&node, threshold, &mut HashSet::new()) {
+            match self.ida_star_search_inner(&node, threshold, &mut HashSet::new(), start_time, &mut iterations) {
                 Ok(()) => return Ok(()),
-                Err(t) => threshold = t,
+                Err(IDAStarResult::NewThreshold(t)) => threshold = t,
+                Err(IDAStarResult::Terminated) => return Err(SearchError::Terminated),
             }
             if threshold == i32::MAX {
                 return Err(SearchError::NoSolution);
@@ -95,24 +156,43 @@ impl Solver {
         node: &Node,
         push_threshold: i32,
         visited: &mut HashSet<u64>,
-    ) -> Result<(), i32> {
+        start_time: std::time::Instant,
+        iterations: &mut u64,
+    ) -> Result<(), IDAStarResult> {
+        // Check termination conditions
+        match self.terminator {
+            Terminator::None => {}
+            Terminator::Timeout(duration) => {
+                if start_time.elapsed() >= duration {
+                    return Err(IDAStarResult::Terminated);
+                }
+            }
+            Terminator::Iterations(max_iterations) => {
+                if *iterations >= max_iterations {
+                    return Err(IDAStarResult::Terminated);
+                }
+            }
+        }
+        *iterations += 1;
+
         if !visited.insert(node.state.normalized_hash(&self.map)) {
-            return Err(i32::MAX);
+            return Err(IDAStarResult::NewThreshold(i32::MAX));
         }
         if node.state.is_solved(self) {
             return Ok(());
         }
         if node.pushes > push_threshold {
-            return Err(node.pushes);
+            return Err(IDAStarResult::NewThreshold(node.pushes));
         }
         let mut min_threshold = i32::MAX;
         for successor in node.successors(self) {
-            match self.ida_star_search_inner(&successor, push_threshold, visited) {
+            match self.ida_star_search_inner(&successor, push_threshold, visited, start_time, iterations) {
                 Ok(()) => return Ok(()),
-                Err(t) => min_threshold = min_threshold.min(t),
+                Err(IDAStarResult::NewThreshold(t)) => min_threshold = min_threshold.min(t),
+                Err(IDAStarResult::Terminated) => return Err(IDAStarResult::Terminated),
             }
         }
-        Err(min_threshold)
+        Err(IDAStarResult::NewThreshold(min_threshold))
     }
 
     /// Returns a reference to the map.
