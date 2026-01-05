@@ -134,6 +134,7 @@ impl Solver {
         let mut visited = HashSet::new();
 
         let state: State = self.map.clone().into();
+        visited.insert(state.normalized_hash(&self.map));
         heap.push(Node::new(state, 0, 0, self));
 
         let mut terminator = TerminatorInner::new(self.terminator);
