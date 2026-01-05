@@ -67,6 +67,34 @@ impl Terminator {
     }
 }
 
+struct TerminatorInner {
+    terminator: Terminator,
+    iterations: u64,
+    start_time: std::time::Instant,
+}
+
+impl TerminatorInner {
+    fn new(terminator: Terminator) -> Self {
+        Self {
+            terminator,
+            iterations: 0,
+            start_time: std::time::Instant::now(),
+        }
+    }
+
+    fn tick(&mut self) -> bool {
+        self.iterations += 1;
+        match self.terminator {
+            Terminator::None => false,
+            Terminator::Timeout(duration) => {
+                // Check timeout every 1000 iterations to avoid excessive CPU usage
+                self.iterations % 1000 == 0 && self.start_time.elapsed() >= duration
+            }
+            Terminator::Iterations(max_iterations) => self.iterations >= max_iterations,
+        }
+    }
+}
+
 /// Internal result type for IDA* search to distinguish between
 /// threshold updates and termination.
 enum IDAStarResult {
@@ -106,27 +134,15 @@ impl Solver {
         let mut visited = HashSet::new();
 
         let state: State = self.map.clone().into();
+        visited.insert(state.normalized_hash(&self.map));
         heap.push(Node::new(state, 0, 0, self));
 
-        let start_time = std::time::Instant::now();
-        let mut iterations: u64 = 0;
+        let mut terminator = TerminatorInner::new(self.terminator);
 
         while let Some(node) = heap.pop() {
-            // Check termination conditions
-            match self.terminator {
-                Terminator::None => {}
-                Terminator::Timeout(duration) => {
-                    if start_time.elapsed() >= duration {
-                        return Err(SearchError::Terminated);
-                    }
-                }
-                Terminator::Iterations(max_iterations) => {
-                    if iterations >= max_iterations {
-                        return Err(SearchError::Terminated);
-                    }
-                }
+            if terminator.tick() {
+                return Err(SearchError::Terminated);
             }
-            iterations += 1;
 
             if node.state.is_solved(self) {
                 return Ok(self.construct_actions(node.state, &came_from));
@@ -148,17 +164,11 @@ impl Solver {
         let mut threshold = state.heuristic(self);
         let node = Node::new(state, 0, 0, self);
 
-        let start_time = std::time::Instant::now();
-        let mut iterations: u64 = 0;
+        let mut terminator = TerminatorInner::new(self.terminator);
 
         loop {
-            match self.ida_star_search_inner(
-                &node,
-                threshold,
-                &mut HashSet::new(),
-                start_time,
-                &mut iterations,
-            ) {
+            match self.ida_star_search_inner(&node, threshold, &mut HashSet::new(), &mut terminator)
+            {
                 Ok(()) => return Ok(()),
                 Err(IDAStarResult::NewThreshold(t)) => threshold = t,
                 Err(IDAStarResult::Terminated) => return Err(SearchError::Terminated),
@@ -174,24 +184,12 @@ impl Solver {
         node: &Node,
         push_threshold: i32,
         visited: &mut HashSet<u64>,
-        start_time: std::time::Instant,
-        iterations: &mut u64,
+        terminator: &mut TerminatorInner,
     ) -> Result<(), IDAStarResult> {
         // Check termination conditions
-        match self.terminator {
-            Terminator::None => {}
-            Terminator::Timeout(duration) => {
-                if start_time.elapsed() >= duration {
-                    return Err(IDAStarResult::Terminated);
-                }
-            }
-            Terminator::Iterations(max_iterations) => {
-                if *iterations >= max_iterations {
-                    return Err(IDAStarResult::Terminated);
-                }
-            }
+        if terminator.tick() {
+            return Err(IDAStarResult::Terminated);
         }
-        *iterations += 1;
 
         if !visited.insert(node.state.normalized_hash(&self.map)) {
             return Err(IDAStarResult::NewThreshold(i32::MAX));
@@ -204,13 +202,7 @@ impl Solver {
         }
         let mut min_threshold = i32::MAX;
         for successor in node.successors(self) {
-            match self.ida_star_search_inner(
-                &successor,
-                push_threshold,
-                visited,
-                start_time,
-                iterations,
-            ) {
+            match self.ida_star_search_inner(&successor, push_threshold, visited, terminator) {
                 Ok(()) => return Ok(()),
                 Err(IDAStarResult::NewThreshold(t)) => min_threshold = min_threshold.min(t),
                 Err(IDAStarResult::Terminated) => return Err(IDAStarResult::Terminated),

@@ -5,7 +5,7 @@ use itertools::Itertools;
 use std::fmt;
 
 /// A collection of maps.
- #[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Collection {
     header: String,
     levels: Vec<Level>,
@@ -103,7 +103,7 @@ impl Collection {
         // Add each level
         for (index, level) in self.levels.iter().enumerate() {
             // Add blank line between levels (but not before the first one if header exists)
-            if index > 0 || self.header.is_empty() {
+            if index > 0 {
                 output.push('\n');
             }
 
