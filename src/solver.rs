@@ -130,10 +130,15 @@ impl Solver {
     /// Searches for solution using the A* algorithm.
     pub fn a_star_search(&self) -> Result<Actions, SearchError> {
         let mut heap = BinaryHeap::new();
-        let mut came_from = HashMap::new();
+        // Maps successor_hash -> (successor_state, parent_hash)
+        // We store the actual successor state to reconstruct the path
+        let mut came_from: HashMap<u64, (State, Option<u64>)> = HashMap::new();
         let mut visited = HashSet::new();
 
         let state: State = self.map.clone().into();
+        let initial_hash = state.normalized_hash(&self.map);
+        visited.insert(initial_hash);
+        came_from.insert(initial_hash, (state.clone(), None));
         heap.push(Node::new(state, 0, 0, self));
 
         let mut terminator = TerminatorInner::new(self.terminator);
@@ -143,14 +148,16 @@ impl Solver {
                 return Err(SearchError::Terminated);
             }
 
+            let node_hash = node.state.normalized_hash(&self.map);
             if node.state.is_solved(self) {
-                return Ok(self.construct_actions(node.state, &came_from));
+                return Ok(self.construct_actions(node_hash, &came_from));
             }
             for successor in node.successors(self) {
-                if !visited.insert(successor.state.normalized_hash(&self.map)) {
+                let successor_hash = successor.state.normalized_hash(&self.map);
+                if !visited.insert(successor_hash) {
                     continue;
                 }
-                came_from.insert(successor.state.clone(), node.state.clone());
+                came_from.insert(successor_hash, (successor.state.clone(), Some(node_hash)));
                 heap.push(successor);
             }
         }
@@ -357,16 +364,25 @@ impl Solver {
         tunnels
     }
 
-    fn construct_actions(&self, mut state: State, came_from: &HashMap<State, State>) -> Actions {
+    fn construct_actions(&self, goal_hash: u64, came_from: &HashMap<u64, (State, Option<u64>)>) -> Actions {
         let mut actions = Actions::new();
-        while let Some(previous_state) = came_from.get(&state) {
+        let mut current_hash = goal_hash;
+        
+        while let Some((current_state, parent_hash_opt)) = came_from.get(&current_hash) {
+            let Some(parent_hash) = parent_hash_opt else {
+                // Reached the initial state
+                break;
+            };
+            
+            let (previous_state, _) = came_from.get(parent_hash).unwrap();
+
             // Find the positions where the box was moved from and to
             let previous_box_position = *previous_state
                 .box_positions
-                .difference(&state.box_positions)
+                .difference(&current_state.box_positions)
                 .next()
                 .unwrap();
-            let box_position = *state
+            let box_position = *current_state
                 .box_positions
                 .difference(&previous_state.box_positions)
                 .next()
@@ -401,8 +417,9 @@ impl Solver {
             }
 
             actions.splice(0..0, new_actions.iter().copied());
-            state = previous_state.clone();
+            current_hash = *parent_hash;
         }
+
         actions
     }
 }

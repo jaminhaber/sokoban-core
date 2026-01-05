@@ -22,18 +22,52 @@ fn test_solver() {
 }
 
 #[test]
+fn weird_levels() {
+    let levels = "
+
+  #####
+###   #
+# $   #
+# @$  #
+#.. ###
+#####
+title: Weird 1
+
+ #####
+##   ##
+# $@ .#
+# #$#.##
+# $  . #
+#      #
+########
+title: Weird 2
+
+ #####
+##   ##
+# $@ .#
+# #$#.##
+# $ $..#
+#      #
+########
+title: Weird 3
+";
+    for level in Level::load_from_str(levels) {
+        solve(level.unwrap());
+    }
+}
+
+#[test]
 fn test_terminator_iterations_limit() {
     let level = load_level_from_file("assets/BoxWorld_100.xsb", 3);
     let map = level.map().clone();
 
     // With only 5 iterations, the solver should not be able to find a solution
-    let solver = Solver::new(map.clone(), Strategy::Fast)
-        .with_terminator(Terminator::Iterations(5));
+    let solver =
+        Solver::new(map.clone(), Strategy::Fast).with_terminator(Terminator::Iterations(5));
     assert_eq!(solver.a_star_search(), Err(SearchError::Terminated));
 
     // IDA* should also terminate
-    let solver = Solver::new(map, Strategy::Fast)
-        .with_terminator(Terminator::Iterations(5));
+    let solver = Solver::new(map, Strategy::Fast).with_terminator(Terminator::Iterations(5));
     assert_eq!(solver.ida_star_search(), Err(SearchError::Terminated));
 }
 
