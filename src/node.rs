@@ -43,7 +43,10 @@ impl Node {
                 && !self.state.box_positions.contains(&position)
         });
         // Creates successor states by pushing boxes
-        for box_position in &self.state.box_positions {
+        // Sort box positions to ensure deterministic iteration order
+        let mut sorted_boxes: Vec<_> = self.state.box_positions.iter().copied().collect();
+        sorted_boxes.sort_by_key(|pos| (pos.y, pos.x));
+        for box_position in sorted_boxes {
             for push_direction in Direction::iter() {
                 let mut new_box_position = box_position + &push_direction.into();
 
@@ -60,7 +63,7 @@ impl Node {
                     continue;
                 }
 
-                let mut new_player_position = *box_position;
+                let mut new_player_position = box_position;
 
                 let mut new_pushes = self.pushes + 1;
                 let mut new_moves = self.moves
@@ -70,7 +73,7 @@ impl Node {
                         |position| {
                             !solver.map()[position].intersects(Tiles::Wall)
                                 && (!self.state.box_positions.contains(&position)
-                                    || position == *box_position)
+                                    || position == box_position)
                         },
                     )
                     .unwrap()
@@ -89,7 +92,7 @@ impl Node {
                 }
 
                 let mut new_box_positions = self.state.box_positions.clone();
-                new_box_positions.remove(box_position);
+                new_box_positions.remove(&box_position);
                 new_box_positions.insert(new_box_position);
 
                 // Skip freeze deadlocks
