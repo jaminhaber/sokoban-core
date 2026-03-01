@@ -40,6 +40,17 @@ impl Actions {
         self.iter().filter(|action| action.is_push()).count()
     }
 
+    /// Returns true if self starts with the given prefix.
+    pub fn starts_with(&self, prefix: &Actions) -> bool {
+        self.0.starts_with(&prefix.0)
+    }
+
+    /// Returns the remaining actions after skipping the first `n` actions.
+    /// If `n >= len()`, returns an empty Actions.
+    pub fn skip(&self, n: usize) -> Actions {
+        Actions(self.0.get(n..).unwrap_or(&[]).to_vec())
+    }
+
     /// Returns the secondary values.
     pub fn secondary_values(&self) -> SecondaryValues {
         let mut box_lines = 0;

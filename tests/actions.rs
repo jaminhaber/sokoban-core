@@ -2,6 +2,10 @@ use std::str::FromStr;
 
 use sokoban_core::{Actions, ParseActionError, ParseActionsError, SecondaryValues};
 
+fn make_actions(chars: &str) -> Actions {
+    chars.parse().unwrap()
+}
+
 #[test]
 fn actions_from_str() {
     assert_eq!(
@@ -85,4 +89,60 @@ fn scoring_metrics() {
     assert_eq!(box_changes, 4);
     assert_eq!(pushing_sessions, 6);
     assert_eq!(player_lines, 20);
+}
+
+#[test]
+fn test_starts_with_matching_prefix() {
+    let actions = make_actions("udlr");
+    let prefix = make_actions("ud");
+    assert!(actions.starts_with(&prefix));
+}
+
+#[test]
+fn test_starts_with_non_matching_prefix() {
+    let actions = make_actions("udlr");
+    let prefix = make_actions("lr");
+    assert!(!actions.starts_with(&prefix));
+}
+
+#[test]
+fn test_starts_with_empty_prefix() {
+    let actions = make_actions("udlr");
+    let prefix = Actions::new();
+    assert!(actions.starts_with(&prefix));
+}
+
+#[test]
+fn test_starts_with_prefix_longer_than_self() {
+    let actions = make_actions("ud");
+    let prefix = make_actions("udlr");
+    assert!(!actions.starts_with(&prefix));
+}
+
+#[test]
+fn test_skip_zero() {
+    let actions = make_actions("udlr");
+    let skipped = actions.skip(0);
+    assert_eq!(skipped, make_actions("udlr"));
+}
+
+#[test]
+fn test_skip_middle() {
+    let actions = make_actions("udlr");
+    let skipped = actions.skip(2);
+    assert_eq!(skipped, make_actions("lr"));
+}
+
+#[test]
+fn test_skip_at_end() {
+    let actions = make_actions("udlr");
+    let skipped = actions.skip(4);
+    assert!(skipped.is_empty());
+}
+
+#[test]
+fn test_skip_beyond_length() {
+    let actions = make_actions("udlr");
+    let skipped = actions.skip(10);
+    assert!(skipped.is_empty());
 }
