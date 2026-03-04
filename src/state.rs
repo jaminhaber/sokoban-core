@@ -106,4 +106,14 @@ impl Hash for State {
         // BoxSet already hashes deterministically (bits are in fixed order)
         self.box_positions.hash(state);
     }
+}/// Returns the hash key for push-optimal search assuming the state is already normalized.
+///
+/// This avoids re-running reachability normalization when the caller has already
+/// canonicalized `player_position` with `normalize()`.
+pub fn key_push_canonical(&self) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    self.hash(&mut hasher);
+    hasher.finish()
 }
+
+

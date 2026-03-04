@@ -36,6 +36,12 @@ impl Node {
     /// - `OptimalPush` uses `pushes + h`.
     /// - `OptimalMove` uses `moves + h`.
     pub fn new(state: State, pushes: i32, moves: i32, solver: &Solver) -> Self {
+        let mut state = state;
+        // Canonicalize player position for push-space strategies to avoid
+        // key collisions between equivalent player locations.
+        if solver.strategy() != Strategy::OptimalMove {
+            state.normalize(solver.map());
+        }
         let key = solver.state_key(&state);
         let h = state.heuristic(solver);
 
@@ -102,7 +108,7 @@ impl Node {
                     continue;
                 }
 
-                let mut new_player_position = box_position;
+                let mut new_player_position = *box_position;
                 let mut new_pushes = self.pushes + 1;
                 let mut new_moves = self.moves + d_behind + 1; // walk behind + push
 
@@ -122,7 +128,7 @@ impl Node {
                 }
 
                 let mut new_box_positions = self.state.box_positions.clone();
-                new_box_positions.remove(box_position);
+                new_box_positions.remove(*box_position);
                 new_box_positions.insert(new_box_position);
 
                 // Skip freeze deadlocks (unless on a goal).

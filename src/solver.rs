@@ -178,7 +178,7 @@ impl Solver {
     pub fn state_key(&self, state: &State) -> u64 {
         match self.strategy {
             Strategy::OptimalMove => state.key_move(),
-            Strategy::OptimalPush | Strategy::Fast => state.key_push(&self.map),
+            Strategy::OptimalPush | Strategy::Fast => state.key_push_canonical(),
         }
     }
 
