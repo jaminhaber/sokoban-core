@@ -67,7 +67,7 @@ impl BoxSet {
         let bit_index = index % BITS_PER_U64;
         let mask = 1u64 << bit_index;
 
-        let was_present = self.bits[word_index] & mask != 0;
+        let was_present = (self.bits[word_index] & mask) != 0;
         self.bits[word_index] |= mask;
 
         if !was_present {
@@ -87,7 +87,7 @@ impl BoxSet {
         let bit_index = index % BITS_PER_U64;
         let mask = 1u64 << bit_index;
 
-        let was_present = self.bits[word_index] & mask != 0;
+        let was_present = (self.bits[word_index] & mask) != 0;
         self.bits[word_index] &= !mask;
 
         if was_present {
@@ -104,9 +104,7 @@ impl BoxSet {
 
         let word_index = index / BITS_PER_U64;
         let bit_index = index % BITS_PER_U64;
-        let mask = 1u64 << bit_index;
-
-        self.bits[word_index] & mask != 0
+        (self.bits[word_index] & (1u64 << bit_index)) != 0
     }
 
     /// Returns the number of positions in the set.
@@ -133,7 +131,6 @@ impl BoxSet {
             set: self,
             word_index: 0,
             current_word: self.bits[0],
-            bit_index: 0,
         }
     }
 
@@ -151,8 +148,8 @@ impl BoxSet {
 
 impl Hash for BoxSet {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // Hash the bits directly - they're already in deterministic order
         self.width.hash(state);
+        // hash all words; deterministic
         for &word in &self.bits {
             word.hash(state);
         }
@@ -160,11 +157,11 @@ impl Hash for BoxSet {
 }
 
 /// Iterator over positions in a `BoxSet`.
+/// O(number_of_set_bits), not O(4096).
 pub struct BoxSetIter<'a> {
     set: &'a BoxSet,
     word_index: usize,
     current_word: u64,
-    bit_index: usize,
 }
 
 impl<'a> Iterator for BoxSetIter<'a> {
@@ -172,26 +169,23 @@ impl<'a> Iterator for BoxSetIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            // If we've exhausted all words, we're done
             if self.word_index >= NUM_U64S {
                 return None;
             }
 
-            // Find the next set bit in the current word
-            while self.bit_index < BITS_PER_U64 {
-                if self.current_word & (1u64 << self.bit_index) != 0 {
-                    let global_index = self.word_index * BITS_PER_U64 + self.bit_index;
-                    self.bit_index += 1;
-                    return Some(self.set.index_to_position(global_index));
-                }
-                self.bit_index += 1;
+            if self.current_word != 0 {
+                // extract lowest set bit
+                let tz = self.current_word.trailing_zeros() as usize;
+                self.current_word &= self.current_word - 1; // clear lowest set bit
+
+                let global_index = self.word_index * BITS_PER_U64 + tz;
+                return Some(self.set.index_to_position(global_index));
             }
 
-            // Move to the next word
+            // move to next word
             self.word_index += 1;
             if self.word_index < NUM_U64S {
                 self.current_word = self.set.bits[self.word_index];
-                self.bit_index = 0;
             }
         }
     }
