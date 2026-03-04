@@ -250,7 +250,7 @@ pub fn pushable_boxes(map: &Map) -> HashSet<IVector2> {
             let player_position = box_position - &direction.into();
             let new_box_position = box_position + &direction.into();
             if player_reachable_area.contains(&player_position) && map.can_move(new_box_position) {
-                pushable_boxes.insert(*box_position);
+                pushable_boxes.insert(box_position);
                 break;
             }
         }

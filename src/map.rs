@@ -9,8 +9,9 @@ use std::{
 };
 
 use crate::{
-    actions::Actions, deadlock::*, direction::Direction, error::ParseMapError, level::Level,
-    math::IVector2, path_finding::*, run_length::rle_decode, state::State, tiles::Tiles,
+    actions::Actions, box_set::BoxSet, deadlock::*, direction::Direction, error::ParseMapError,
+    level::Level, math::IVector2, path_finding::*, run_length::rle_decode, state::State,
+    tiles::Tiles,
 };
 
 /// A grid-based map.
@@ -25,7 +26,7 @@ pub struct Map {
     dimensions: IVector2,
 
     player_position: IVector2,
-    box_positions: HashSet<IVector2>,
+    box_positions: BoxSet,
     goal_positions: HashSet<IVector2>,
 }
 
@@ -80,7 +81,7 @@ impl Map {
         instance.add_walls_around_floors();
 
         instance.player_position = player_position;
-        instance.box_positions = box_positions;
+        instance.box_positions = BoxSet::from_iter(dimensions.x, box_positions);
         instance.goal_positions = goal_positions;
 
         // Verify the solution
@@ -105,7 +106,7 @@ impl Map {
             data: vec![Tiles::empty(); (dimensions.x * dimensions.y) as usize],
             dimensions,
             player_position: IVector2::zeros(),
-            box_positions: HashSet::new(),
+            box_positions: BoxSet::new(dimensions.x),
             goal_positions: HashSet::new(),
         }
     }
@@ -128,7 +129,7 @@ impl Map {
     }
 
     /// Returns a reference to the positions of the boxes.
-    pub fn box_positions(&self) -> &HashSet<IVector2> {
+    pub fn box_positions(&self) -> &BoxSet {
         &self.box_positions
     }
 
@@ -145,7 +146,15 @@ impl Map {
 
     /// Returns `true` if the map is solved.
     pub fn is_solved(&self) -> bool {
-        self.box_positions == self.goal_positions
+        if self.box_positions.len() != self.goal_positions.len() {
+            return false;
+        }
+        for box_pos in &self.box_positions {
+            if !self.goal_positions.contains(&box_pos) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Normalizes the map.
@@ -230,11 +239,10 @@ impl Map {
         self.dimensions = clamped_map.dimensions;
 
         self.player_position -= offset;
-        self.box_positions = self
-            .box_positions
-            .iter()
-            .map(|position| *position - offset)
-            .collect();
+        self.box_positions = BoxSet::from_iter(
+            new_dimensions.x,
+            self.box_positions.iter().map(|position| position - offset),
+        );
         self.goal_positions = self
             .goal_positions
             .iter()
@@ -342,7 +350,7 @@ impl Map {
             "box position does not exist"
         );
         self[position].remove(Tiles::Box);
-        self.box_positions.remove(&position);
+        self.box_positions.remove(position);
     }
 
     /// Removes a goal at the given position.
@@ -390,8 +398,7 @@ impl Map {
         for position in self
             .box_positions
             .iter()
-            .filter(|position| !self[**position].intersects(Tiles::Floor))
-            .copied()
+            .filter(|position| !self[*position].intersects(Tiles::Floor))
             .collect::<Vec<_>>()
         {
             debug_assert!(
@@ -447,7 +454,10 @@ impl Map {
         self.data = transformed_map.data;
         self.dimensions = transformed_map.dimensions;
         self.player_position = operation(self.player_position);
-        self.box_positions = self.box_positions.iter().copied().map(operation).collect();
+        self.box_positions = BoxSet::from_iter(
+            new_dimensions.x,
+            self.box_positions.iter().map(operation),
+        );
         self.goal_positions = self.goal_positions.iter().copied().map(operation).collect();
     }
 

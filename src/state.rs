@@ -1,9 +1,7 @@
-use std::{
-    collections::HashSet,
-    hash::{DefaultHasher, Hash, Hasher},
-};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
+    box_set::BoxSet,
     math::IVector2,
     path_finding::{normalized_area, reachable_area},
     solver::Solver,
@@ -13,20 +11,29 @@ use crate::{
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct State {
     pub player_position: IVector2,
-    pub box_positions: HashSet<IVector2>,
+    pub box_positions: BoxSet,
 }
 
 impl State {
     /// Returns true if the state is solved.
     pub fn is_solved(&self, solver: &Solver) -> bool {
-        self.box_positions == *solver.map().goal_positions()
+        // Check if all box positions match goal positions
+        if self.box_positions.len() != solver.map().goal_positions().len() {
+            return false;
+        }
+        for box_pos in &self.box_positions {
+            if !solver.map().goal_positions().contains(&box_pos) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Returns the heuristic value of the state.
     pub fn heuristic(&self, solver: &Solver) -> i32 {
         self.box_positions
             .iter()
-            .map(|box_position| solver.lower_bounds()[box_position])
+            .map(|box_position| solver.lower_bounds()[&box_position])
             .sum()
     }
 
@@ -51,8 +58,7 @@ impl State {
 impl Hash for State {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.player_position.hash(state);
-        for box_position in &self.box_positions {
-            box_position.hash(state);
-        }
+        // BoxSet already hashes deterministically (bits are in fixed order)
+        self.box_positions.hash(state);
     }
 }

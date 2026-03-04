@@ -362,12 +362,12 @@ impl Solver {
         let mut actions = Actions::new();
         while let Some(previous_state) = came_from.get(&state) {
             // Find the positions where the box was moved from and to
-            let previous_box_position = *previous_state
+            let previous_box_position = previous_state
                 .box_positions
                 .difference(&state.box_positions)
                 .next()
                 .unwrap();
-            let box_position = *state
+            let box_position = state
                 .box_positions
                 .difference(&previous_state.box_positions)
                 .next()

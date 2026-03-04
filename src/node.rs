@@ -60,7 +60,7 @@ impl Node {
                     continue;
                 }
 
-                let mut new_player_position = *box_position;
+                let mut new_player_position = box_position;
 
                 let mut new_pushes = self.pushes + 1;
                 let mut new_moves = self.moves
@@ -70,7 +70,7 @@ impl Node {
                         |position| {
                             !solver.map()[position].intersects(Tiles::Wall)
                                 && (!self.state.box_positions.contains(&position)
-                                    || position == *box_position)
+                                    || position == box_position)
                         },
                     )
                     .unwrap()

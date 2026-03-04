@@ -2,7 +2,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::{direction::Direction, map::Map, math::IVector2, tiles::Tiles};
+use crate::{box_set::BoxSet, direction::Direction, map::Map, math::IVector2, tiles::Tiles};
 
 /// Checks if the given box position is a static deadlock.
 ///
@@ -11,7 +11,7 @@ use crate::{direction::Direction, map::Map, math::IVector2, tiles::Tiles};
 pub fn is_static_deadlock(
     map: &Map,
     box_position: IVector2,
-    box_positions: &HashSet<IVector2>,
+    box_positions: &BoxSet,
     visited: &mut HashSet<IVector2>,
 ) -> bool {
     debug_assert!(box_positions.contains(&box_position));
@@ -52,7 +52,7 @@ pub fn is_static_deadlock(
 pub fn is_freeze_deadlock(
     map: &Map,
     box_position: IVector2,
-    box_positions: &HashSet<IVector2>,
+    box_positions: &BoxSet,
     visited: &mut HashSet<IVector2>,
 ) -> bool {
     debug_assert!(box_positions.contains(&box_position));
@@ -198,7 +198,6 @@ pub fn calculate_useless_floors(mut map: Map) -> HashSet<IVector2> {
 pub fn calculate_useless_boxes(map: &Map) -> HashSet<IVector2> {
     map.box_positions()
         .iter()
-        .cloned()
         .filter(|&position| {
             is_freeze_deadlock(map, position, map.box_positions(), &mut HashSet::new())
         })
