@@ -43,6 +43,9 @@ pub struct Solver {
     // Weighted A* parameter for Strategy::Fast.
     fast_weight: f32,
 
+    // Whether to compress forced corridor pushes using tunnel macros.
+    tunnel_macros: bool,
+
     // lower_bounds[pos] = minimum pushes from pos to any goal in the abstraction
     lower_bounds: OnceCell<HashMap<IVector2, i32>>,
 
@@ -129,11 +132,29 @@ impl Solver {
             map,
             strategy,
             fast_weight: 2.0,
+            tunnel_macros: false,
             lower_bounds: OnceCell::new(),
             distance_matrix: OnceCell::new(),
             tunnels: OnceCell::new(),
             terminator: Terminator::None,
         }
+    }
+
+    /// Enables or disables tunnel macro compression.
+    ///
+    /// When enabled, successor generation will repeatedly push boxes through
+    /// detected tunnel corridors as a single successor, reducing search depth.
+    ///
+    /// This is a performance optimization. Keep it disabled if you suspect your
+    /// tunnel detector is overly aggressive for some level sets.
+    pub fn with_tunnel_macros(mut self, enabled: bool) -> Self {
+        self.tunnel_macros = enabled;
+        self
+    }
+
+    /// Returns whether tunnel macro compression is enabled.
+    pub fn tunnel_macros(&self) -> bool {
+        self.tunnel_macros
     }
 
     /// Sets the terminator for the solver.
@@ -199,9 +220,10 @@ impl Solver {
         let mut states: HashMap<u64, State> = HashMap::new();
 
         let start: State = self.map.clone().into();
-        let start_node = Node::new(start.clone(), 0, 0, self);
+        let start_node = Node::new(start, 0, 0, self);
         best_g.insert(start_node.key, 0);
-        states.insert(start_node.key, start);
+        // Store the canonical state representation that corresponds to this key.
+        states.insert(start_node.key, start_node.state.clone());
 
         heap.push(start_node);
 
@@ -517,17 +539,42 @@ fn ida_dfs(
     /// Reconstructs the action sequence from a solved state key.
     fn construct_actions_from_keys(
         &self,
-        mut key: u64,
+        goal_key: u64,
         parent: &HashMap<u64, u64>,
         states: &HashMap<u64, State>,
     ) -> Actions {
-        let mut actions = Actions::new();
+        // IMPORTANT:
+        // For push-space strategies we canonicalize the player position within its
+        // reachable region. This is correct for pruning/search, but it means
+        // `State.player_position` is not necessarily the player position that would
+        // result from executing the reconstructed move sequence.
+        //
+        // To guarantee validity, we reconstruct *push intentions* from the parent chain,
+        // then simulate forward from the real initial state, re-pathfinding before each
+        // push using the current simulated player position and box configuration.
 
-        while let Some(&pk) = parent.get(&key) {
-            let cur = states.get(&key).expect("missing state for key");
-            let prev = states.get(&pk).expect("missing state for parent key");
+        // 1) Build key chain from start -> goal.
+        let mut chain: Vec<u64> = vec![goal_key];
+        let mut k = goal_key;
+        while let Some(&pk) = parent.get(&k) {
+            chain.push(pk);
+            k = pk;
+        }
+        chain.reverse();
 
-            // Identify moved box
+        // 2) Convert state transitions into push steps.
+        #[derive(Clone, Copy, Debug)]
+        struct PushStep {
+            from: IVector2,
+            dir: Direction,
+            count: i32,
+        }
+
+        let mut steps: Vec<PushStep> = Vec::with_capacity(chain.len().saturating_sub(1));
+        for win in chain.windows(2) {
+            let prev = states.get(&win[0]).expect("missing prev state");
+            let cur = states.get(&win[1]).expect("missing cur state");
+
             let prev_box = prev
                 .box_positions
                 .difference(&cur.box_positions)
@@ -540,39 +587,54 @@ fn ida_dfs(
                 .expect("no added box");
 
             let diff = cur_box - prev_box;
-            let push_dir =
-                Direction::try_from(IVector2::new(diff.x.signum(), diff.y.signum())).unwrap();
+            let dir = Direction::try_from(IVector2::new(diff.x.signum(), diff.y.signum()))
+                .expect("non-axis-aligned displacement");
+            let count = diff.x.abs() + diff.y.abs();
+            debug_assert!(count >= 1);
 
-            // Walk player to behind-square in previous state
-            let mut new_actions: Vec<_> = find_path(
-                prev.player_position,
-                prev_box - &push_dir.into(),
-                |p| !self.map[p].intersects(Tiles::Wall) && !prev.box_positions.contains(&p),
-            )
-            .unwrap()
-            .windows(2)
-            .map(|w| Direction::try_from(w[1] - w[0]).unwrap())
-            .map(Action::Move)
-            .collect();
+            steps.push(PushStep {
+                from: prev_box,
+                dir,
+                count,
+            });
+        }
 
-            new_actions.push(Action::Push(push_dir));
+        // 3) Simulate forward from the actual initial state.
+        let mut actions = Actions::new();
+        let mut sim_state: State = self.map.clone().into();
 
-            // Tunnel macro expansion: apply the same macro policy as generation.
-            let mut b = prev_box + &push_dir.into();
-            while self.is_tunnel(b, push_dir) {
-                let next = b + &push_dir.into();
-                if !self.map.in_bounds(next) || self.map[next].intersects(Tiles::Wall) {
-                    break;
+        for step in steps {
+            let mut box_pos = step.from;
+            for _ in 0..step.count {
+                let behind = box_pos - &step.dir.into();
+
+                let path = find_path(
+                    sim_state.player_position,
+                    behind,
+                    |p| {
+                        !self.map[p].intersects(Tiles::Wall)
+                            && !sim_state.box_positions.contains(&p)
+                    },
+                )
+                .expect("no path to behind-square during reconstruction");
+
+                for w in path.windows(2) {
+                    let d = Direction::try_from(w[1] - w[0]).unwrap();
+                    actions.push(Action::Move(d));
                 }
-                if cur.box_positions.contains(&next) {
-                    break;
-                }
-                b = next;
-                new_actions.push(Action::Push(push_dir));
+
+                actions.push(Action::Push(step.dir));
+
+                let new_box = box_pos + &step.dir.into();
+                debug_assert!(!self.map[new_box].intersects(Tiles::Wall));
+                debug_assert!(!sim_state.box_positions.contains(&new_box));
+                debug_assert!(sim_state.box_positions.contains(&box_pos));
+
+                sim_state.box_positions.remove(box_pos);
+                sim_state.box_positions.insert(new_box);
+                sim_state.player_position = box_pos;
+                box_pos = new_box;
             }
-
-            actions.splice(0..0, new_actions.iter().copied());
-            key = pk;
         }
 
         actions

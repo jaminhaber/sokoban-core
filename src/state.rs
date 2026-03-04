@@ -98,6 +98,21 @@ pub fn heuristic(&self, solver: &Solver) -> i32 {
         self.hash(&mut hasher);
         hasher.finish()
     }
+
+    /// Returns the hash key for push-space strategies **assuming the state is already normalized**.
+    ///
+    /// This avoids re-running reachability-based normalization when the caller has already
+    /// canonicalized `player_position` via [`State::normalize`].
+    ///
+    /// # Correctness
+    ///
+    /// This must only be used when `player_position` has been normalized with respect to the
+    /// current box configuration.
+    pub fn key_push_canonical(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 impl Hash for State {
@@ -106,14 +121,6 @@ impl Hash for State {
         // BoxSet already hashes deterministically (bits are in fixed order)
         self.box_positions.hash(state);
     }
-}/// Returns the hash key for push-optimal search assuming the state is already normalized.
-///
-/// This avoids re-running reachability normalization when the caller has already
-/// canonicalized `player_position` with `normalize()`.
-pub fn key_push_canonical(&self) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    self.hash(&mut hasher);
-    hasher.finish()
 }
 
 

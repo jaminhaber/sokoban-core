@@ -108,12 +108,14 @@ impl Node {
                     continue;
                 }
 
-                let mut new_player_position = *box_position;
+                let mut new_player_position = box_position;
                 let mut new_pushes = self.pushes + 1;
                 let mut new_moves = self.moves + d_behind + 1; // walk behind + push
 
-                // Tunnel macro: repeatedly push through forced corridor segments.
-                while solver.is_tunnel(new_box_position, push_direction) {
+                // Tunnel macro: optionally compress forced corridor segments.
+                while solver.tunnel_macros()
+                    && solver.is_tunnel(new_box_position, push_direction)
+                {
                     let next = new_box_position + &push_direction.into();
                     if !solver.map().in_bounds(next)
                         || solver.map()[next].intersects(Tiles::Wall)
@@ -128,7 +130,7 @@ impl Node {
                 }
 
                 let mut new_box_positions = self.state.box_positions.clone();
-                new_box_positions.remove(*box_position);
+                new_box_positions.remove(box_position);
                 new_box_positions.insert(new_box_position);
 
                 // Skip freeze deadlocks (unless on a goal).
