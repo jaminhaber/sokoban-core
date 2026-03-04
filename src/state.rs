@@ -45,12 +45,24 @@ impl State {
         .unwrap();
     }
 
-    /// Returns the hash of the normalized state.
-    pub fn normalized_hash(&self, map: &Map) -> u64 {
+    /// Returns the hash key for push-optimal search.
+    /// Normalizes player position to the top-left of the reachable area.
+    /// This is safe for push-optimal because player position within a reachable
+    /// region doesn't affect push count.
+    pub fn key_push(&self, map: &Map) -> u64 {
         let mut normalized_state = self.clone();
         normalized_state.normalize(map);
         let mut hasher = DefaultHasher::new();
         normalized_state.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Returns the hash key for move-optimal search.
+    /// Uses exact player position because different player positions with
+    /// the same box configuration can have different future move costs.
+    pub fn key_move(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
         hasher.finish()
     }
 }

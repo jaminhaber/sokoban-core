@@ -134,7 +134,7 @@ impl Solver {
         let mut visited = HashSet::new();
 
         let state: State = self.map.clone().into();
-        visited.insert(state.normalized_hash(&self.map));
+        visited.insert(self.state_key(&state));
         heap.push(Node::new(state, 0, 0, self));
 
         let mut terminator = TerminatorInner::new(self.terminator);
@@ -148,7 +148,7 @@ impl Solver {
                 return Ok(self.construct_actions(node.state, &came_from));
             }
             for successor in node.successors(self) {
-                if !visited.insert(successor.state.normalized_hash(&self.map)) {
+                if !visited.insert(self.state_key(&successor.state)) {
                     continue;
                 }
                 came_from.insert(successor.state.clone(), node.state.clone());
@@ -191,7 +191,7 @@ impl Solver {
             return Err(IDAStarResult::Terminated);
         }
 
-        if !visited.insert(node.state.normalized_hash(&self.map)) {
+        if !visited.insert(self.state_key(&node.state)) {
             return Err(IDAStarResult::NewThreshold(i32::MAX));
         }
         if node.state.is_solved(self) {
@@ -219,6 +219,16 @@ impl Solver {
     /// Returns the strategy.
     pub fn strategy(&self) -> Strategy {
         self.strategy
+    }
+
+    /// Returns the appropriate state key based on the search strategy.
+    /// For move-optimal search, uses exact player position.
+    /// For push-optimal and fast search, normalizes player position.
+    fn state_key(&self, state: &State) -> u64 {
+        match self.strategy {
+            Strategy::OptimalMove => state.key_move(),
+            Strategy::OptimalPush | Strategy::Fast => state.key_push(&self.map),
+        }
     }
 
     /// Returns a reference to the set of lower bounds.
