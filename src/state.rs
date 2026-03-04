@@ -2,6 +2,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::{
     box_set::BoxSet,
+    matching::min_cost_matching,
     math::IVector2,
     path_finding::{normalized_area, reachable_area},
     solver::Solver,
@@ -29,12 +30,44 @@ impl State {
         true
     }
 
-    /// Returns the heuristic value of the state.
-    pub fn heuristic(&self, solver: &Solver) -> i32 {
-        self.box_positions
+    /// Returns an admissible heuristic estimate for the state.
+///
+/// This heuristic is the **minimum-cost perfect matching** between boxes and goals.
+/// The cost of assigning a given box to a given goal is the precomputed *push distance*
+/// from the box position to the goal, ignoring other boxes.
+///
+/// This is a much tighter lower bound than summing each box's nearest-goal distance,
+/// because it respects the one-to-one assignment constraint.
+///
+/// If no perfect matching exists (some box cannot reach any goal in the abstraction),
+/// this function returns `i32::MAX` to signal a provable dead end in the abstraction.
+pub fn heuristic(&self, solver: &Solver) -> i32 {
+        let goals: Vec<IVector2> = solver.map().goal_positions().iter().copied().collect();
+        let boxes: Vec<IVector2> = self.box_positions.iter().collect();
+
+        if boxes.len() != goals.len() {
+            return i32::MAX;
+        }
+        if boxes.is_empty() {
+            return 0;
+        }
+
+        let dm = solver.distance_matrix();
+
+        let cost_matrix: Vec<Vec<i32>> = boxes
             .iter()
-            .map(|box_position| solver.lower_bounds()[&box_position])
-            .sum()
+            .map(|b| {
+                goals
+                    .iter()
+                    .map(|g| dm.get(b).and_then(|m| m.get(g).copied()).unwrap_or(i32::MAX))
+                    .collect()
+            })
+            .collect();
+
+        match min_cost_matching(&cost_matrix) {
+            Some((c, _)) => c,
+            None => i32::MAX,
+        }
     }
 
     /// Normalizes the state.

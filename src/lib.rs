@@ -12,6 +12,7 @@ pub mod error;
 pub mod level;
 pub mod map;
 pub mod math;
+pub mod matching;
 pub mod path_finding;
 pub mod run_length;
 pub mod solver;
