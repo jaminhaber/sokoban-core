@@ -1,17 +1,13 @@
 //! A solver for the Sokoban problem.
 
+use crate::{
+    direction::Direction, math::IVector2, node::Node, path_finding::find_path, state::State,
+    Action, Actions, Map, SearchError, Tiles,
+};
 use std::{
     cell::OnceCell,
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     time::Duration,
-};
-use crate::{
-    direction::Direction,
-    math::IVector2,
-    node::Node,
-    path_finding::find_path,
-    state::State,
-    Action, Actions, Map, SearchError, Tiles,
 };
 
 /// The strategy to use when searching for a solution.
@@ -101,10 +97,7 @@ impl TerminatorInner {
         self.iterations += 1;
         match self.terminator {
             Terminator::None => false,
-            Terminator::Timeout(duration) => {
-                // Check timeout every 1000 iterations to avoid excessive CPU usage
-                self.iterations % 1000 == 0 && self.start_time.elapsed() >= duration
-            }
+            Terminator::Timeout(duration) => self.start_time.elapsed() >= duration,
             Terminator::Iterations(max_iterations) => self.iterations >= max_iterations,
         }
     }
@@ -119,8 +112,6 @@ enum IdaDfsResult {
     /// The terminator requested early stop.
     Terminated,
 }
-
-
 
 impl Solver {
     /// Creates a new `Solver`.
@@ -270,125 +261,125 @@ impl Solver {
             Strategy::OptimalPush | Strategy::Fast => node.pushes,
         }
     }
-/// Solves the Sokoban level using **IDA\*** (Iterative Deepening A*).
-///
-/// IDA* performs repeated depth-first searches with increasing `f = g + h`
-/// thresholds. It can be significantly more memory-efficient than A* but
-/// typically expands more nodes.
-///
-/// # Cost model
-///
-/// * `OptimalPush` / `Fast`: `g = pushes`
-/// * `OptimalMove`: `g = moves` (usually much slower)
-///
-/// # Returns
-///
-/// * `Ok(())` if a solution is found.
-/// * `Err(SearchError::NoSolution)` if no solution exists.
-/// * `Err(SearchError::Terminated)` if the terminator triggers.
-pub fn ida_star_search(&self) -> Result<(), SearchError> {
-    let start: State = self.map.clone().into();
-    let h0 = start.heuristic(self);
-    if h0 == i32::MAX {
-        return Err(SearchError::NoSolution);
-    }
-
-    let mut threshold = h0; // g(start)=0
-    let mut terminator = TerminatorInner::new(self.terminator);
-
-    loop {
-        let mut visited: HashSet<u64> = HashSet::new();
-
-        match self.ida_dfs(&start, 0, 0, threshold, &mut visited, &mut terminator) {
-            IdaDfsResult::Found => return Ok(()),
-            IdaDfsResult::Terminated => return Err(SearchError::Terminated),
-            IdaDfsResult::NextThreshold(next) => {
-                if next == i32::MAX {
-                    return Err(SearchError::NoSolution);
-                }
-                threshold = next;
-            }
+    /// Solves the Sokoban level using **IDA\*** (Iterative Deepening A*).
+    ///
+    /// IDA* performs repeated depth-first searches with increasing `f = g + h`
+    /// thresholds. It can be significantly more memory-efficient than A* but
+    /// typically expands more nodes.
+    ///
+    /// # Cost model
+    ///
+    /// * `OptimalPush` / `Fast`: `g = pushes`
+    /// * `OptimalMove`: `g = moves` (usually much slower)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if a solution is found.
+    /// * `Err(SearchError::NoSolution)` if no solution exists.
+    /// * `Err(SearchError::Terminated)` if the terminator triggers.
+    pub fn ida_star_search(&self) -> Result<(), SearchError> {
+        let start: State = self.map.clone().into();
+        let h0 = start.heuristic(self);
+        if h0 == i32::MAX {
+            return Err(SearchError::NoSolution);
         }
-    }
-}
 
-/// Performs one IDA* depth-first search iteration for a given `threshold`.
-///
-/// This function uses **path-based** cycle checking via `visited`:
-/// it inserts the current state's key on entry and removes it on return.
-fn ida_dfs(
-    &self,
-    state: &State,
-    pushes: i32,
-    moves: i32,
-    threshold: i32,
-    visited: &mut HashSet<u64>,
-    terminator: &mut TerminatorInner,
-) -> IdaDfsResult {
-    if terminator.tick() {
-        return IdaDfsResult::Terminated;
-    }
+        let mut threshold = h0; // g(start)=0
+        let mut terminator = TerminatorInner::new(self.terminator);
 
-    let h = state.heuristic(self);
-    if h == i32::MAX {
-        return IdaDfsResult::NextThreshold(i32::MAX);
-    }
+        loop {
+            let mut visited: HashSet<u64> = HashSet::new();
 
-    let g = match self.strategy {
-        Strategy::OptimalMove => moves,
-        Strategy::OptimalPush | Strategy::Fast => pushes,
-    };
-    let f = g.saturating_add(h);
-
-    if f > threshold {
-        return IdaDfsResult::NextThreshold(f);
-    }
-    if state.is_solved(self) {
-        return IdaDfsResult::Found;
-    }
-
-    let key = self.state_key(state);
-    if !visited.insert(key) {
-        // Cycle on the current DFS path; ignore.
-        return IdaDfsResult::NextThreshold(i32::MAX);
-    }
-
-    let node = Node::new(state.clone(), pushes, moves, self);
-    let mut min_next = i32::MAX;
-
-    for succ in node.successors(self) {
-        match self.ida_dfs(
-            &succ.state,
-            succ.pushes,
-            succ.moves,
-            threshold,
-            visited,
-            terminator,
-        ) {
-            IdaDfsResult::Found => {
-                visited.remove(&key);
-                return IdaDfsResult::Found;
-            }
-            IdaDfsResult::Terminated => {
-                visited.remove(&key);
-                return IdaDfsResult::Terminated;
-            }
-            IdaDfsResult::NextThreshold(t) => {
-                if t < min_next {
-                    min_next = t;
+            match self.ida_dfs(&start, 0, 0, threshold, &mut visited, &mut terminator) {
+                IdaDfsResult::Found => return Ok(()),
+                IdaDfsResult::Terminated => return Err(SearchError::Terminated),
+                IdaDfsResult::NextThreshold(next) => {
+                    if next == i32::MAX {
+                        return Err(SearchError::NoSolution);
+                    }
+                    threshold = next;
                 }
             }
         }
     }
 
-    visited.remove(&key);
-    IdaDfsResult::NextThreshold(min_next)
-}
+    /// Performs one IDA* depth-first search iteration for a given `threshold`.
+    ///
+    /// This function uses **path-based** cycle checking via `visited`:
+    /// it inserts the current state's key on entry and removes it on return.
+    fn ida_dfs(
+        &self,
+        state: &State,
+        pushes: i32,
+        moves: i32,
+        threshold: i32,
+        visited: &mut HashSet<u64>,
+        terminator: &mut TerminatorInner,
+    ) -> IdaDfsResult {
+        if terminator.tick() {
+            return IdaDfsResult::Terminated;
+        }
 
+        let h = state.heuristic(self);
+        if h == i32::MAX {
+            return IdaDfsResult::NextThreshold(i32::MAX);
+        }
+
+        let g = match self.strategy {
+            Strategy::OptimalMove => moves,
+            Strategy::OptimalPush | Strategy::Fast => pushes,
+        };
+        let f = g.saturating_add(h);
+
+        if f > threshold {
+            return IdaDfsResult::NextThreshold(f);
+        }
+        if state.is_solved(self) {
+            return IdaDfsResult::Found;
+        }
+
+        let key = self.state_key(state);
+        if !visited.insert(key) {
+            // Cycle on the current DFS path; ignore.
+            return IdaDfsResult::NextThreshold(i32::MAX);
+        }
+
+        let node = Node::new(state.clone(), pushes, moves, self);
+        let mut min_next = i32::MAX;
+
+        for succ in node.successors(self) {
+            match self.ida_dfs(
+                &succ.state,
+                succ.pushes,
+                succ.moves,
+                threshold,
+                visited,
+                terminator,
+            ) {
+                IdaDfsResult::Found => {
+                    visited.remove(&key);
+                    return IdaDfsResult::Found;
+                }
+                IdaDfsResult::Terminated => {
+                    visited.remove(&key);
+                    return IdaDfsResult::Terminated;
+                }
+                IdaDfsResult::NextThreshold(t) => {
+                    if t < min_next {
+                        min_next = t;
+                    }
+                }
+            }
+        }
+
+        visited.remove(&key);
+        IdaDfsResult::NextThreshold(min_next)
+    }
 
     /// Returns lower bounds (dead-square / min-to-any-goal) computed from push distances.
     pub fn lower_bounds(&self) -> &HashMap<IVector2, i32> {
-        self.lower_bounds.get_or_init(|| self.precompute_push_distances().0)
+        self.lower_bounds
+            .get_or_init(|| self.precompute_push_distances().0)
     }
 
     /// Returns the push distance matrix used by the matching heuristic.
@@ -418,10 +409,12 @@ fn ida_dfs(
     /// Distances are computed by reverse BFS from each goal.
     fn precompute_push_distances(
         &self,
-    ) -> (HashMap<IVector2, i32>, HashMap<IVector2, HashMap<IVector2, i32>>) {
-        let is_free = |p: IVector2| -> bool {
-            self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall)
-        };
+    ) -> (
+        HashMap<IVector2, i32>,
+        HashMap<IVector2, HashMap<IVector2, i32>>,
+    ) {
+        let is_free =
+            |p: IVector2| -> bool { self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall) };
 
         let mut distance_matrix: HashMap<IVector2, HashMap<IVector2, i32>> = HashMap::new();
 
@@ -483,9 +476,8 @@ fn ida_dfs(
     fn calculate_tunnels(&self) -> HashSet<(IVector2, Direction)> {
         let mut tunnels = HashSet::new();
 
-        let is_free = |p: IVector2| -> bool {
-            self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall)
-        };
+        let is_free =
+            |p: IVector2| -> bool { self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall) };
 
         for x in 0..self.map.dimensions().x {
             for y in 0..self.map.dimensions().y {
@@ -608,14 +600,9 @@ fn ida_dfs(
             for _ in 0..step.count {
                 let behind = box_pos - &step.dir.into();
 
-                let path = find_path(
-                    sim_state.player_position,
-                    behind,
-                    |p| {
-                        !self.map[p].intersects(Tiles::Wall)
-                            && !sim_state.box_positions.contains(&p)
-                    },
-                )
+                let path = find_path(sim_state.player_position, behind, |p| {
+                    !self.map[p].intersects(Tiles::Wall) && !sim_state.box_positions.contains(&p)
+                })
                 .expect("no path to behind-square during reconstruction");
 
                 for w in path.windows(2) {
