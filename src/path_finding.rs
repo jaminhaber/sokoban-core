@@ -250,7 +250,7 @@ pub fn pushable_boxes(map: &Map) -> HashSet<IVector2> {
             let player_position = box_position - &direction.into();
             let new_box_position = box_position + &direction.into();
             if player_reachable_area.contains(&player_position) && map.can_move(new_box_position) {
-                pushable_boxes.insert(*box_position);
+                pushable_boxes.insert(box_position);
                 break;
             }
         }
@@ -284,6 +284,46 @@ pub fn reachable_area(
     }
 
     reachable_area
+}
+
+
+/// Calculates all reachable positions and their shortest-path distances from `position`.
+///
+/// This is a standard BFS over the grid graph induced by `can_move`.
+/// Distances are measured in number of steps (moves).
+///
+/// # Returns
+///
+/// A map `dist[pos] = d` containing all reachable positions and their distances.
+///
+/// # Complexity
+///
+/// `O(|reachable tiles|)`.
+pub fn reachable_area_with_distances(
+    position: IVector2,
+    can_move: impl Fn(IVector2) -> bool,
+) -> HashMap<IVector2, i32> {
+    let mut dist = HashMap::<IVector2, i32>::new();
+    let mut deque = VecDeque::<IVector2>::new();
+    dist.insert(position, 0);
+    deque.push_back(position);
+
+    while let Some(p) = deque.pop_front() {
+        let d = dist[&p];
+        for direction in Direction::iter() {
+            let n = p + &direction.into();
+            if !can_move(n) {
+                continue;
+            }
+            if dist.contains_key(&n) {
+                continue;
+            }
+            dist.insert(n, d + 1);
+            deque.push_back(n);
+        }
+    }
+
+    dist
 }
 
 /// Returns the top-left position.

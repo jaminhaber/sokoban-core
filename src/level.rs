@@ -138,7 +138,15 @@ impl Level {
 
     /// Returns true if the level is solved.
     pub fn is_solved(&self) -> bool {
-        self.map.box_positions() == self.map.goal_positions()
+        if self.map.box_positions().len() != self.map.goal_positions().len() {
+            return false;
+        }
+        for box_pos in self.map.box_positions().iter() {
+            if !self.map.goal_positions().contains(&box_pos) {
+                return false;
+            }
+        }
+        true
     }
 
     /// Returns the reachable area for the player.

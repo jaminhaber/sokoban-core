@@ -23,6 +23,17 @@ impl Direction {
         [Self::Up, Self::Down, Self::Left, Self::Right].into_iter()
     }
 
+    /// Returns the two directions perpendicular to `self`.
+    ///
+    /// For vertical directions this returns `(Left, Right)`.
+    /// For horizontal directions this returns `(Up, Down)`.
+    pub fn perpendiculars(self) -> (Direction, Direction) {
+        match self {
+            Direction::Up | Direction::Down => (Direction::Left, Direction::Right),
+            Direction::Left | Direction::Right => (Direction::Up, Direction::Down),
+        }
+    }
+
     /// Rotate the direction 90° clockwise.
     ///
     /// # Examples

@@ -4,6 +4,7 @@
 
 pub mod action;
 pub mod actions;
+pub mod box_set;
 pub mod collection;
 pub mod deadlock;
 pub mod direction;
@@ -11,6 +12,7 @@ pub mod error;
 pub mod level;
 pub mod map;
 pub mod math;
+pub mod matching;
 pub mod path_finding;
 pub mod run_length;
 pub mod solver;
@@ -21,6 +23,7 @@ mod state;
 
 pub use action::*;
 pub use actions::*;
+pub use box_set::*;
 pub use collection::*;
 pub use direction::*;
 pub use error::*;

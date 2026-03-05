@@ -1,89 +1,130 @@
+//! Search node representation and successor generation.
+
 use std::{cmp::Ordering, collections::HashSet};
 
 use crate::{
     deadlock::is_freeze_deadlock,
     direction::Direction,
-    path_finding::{find_path, reachable_area},
+    path_finding::reachable_area_with_distances,
     solver::{Solver, Strategy},
     state::State,
     Tiles,
 };
 
-/// A node in the search tree.
+/// A node in the search frontier.
+///
+/// Stores both push and move costs so multiple strategies can share the same
+/// successor generator.
 #[derive(Clone, Eq, Debug)]
 pub struct Node {
+    /// The Sokoban state at this node.
     pub state: State,
+    /// Number of pushes taken to reach this node.
     pub pushes: i32,
+    /// Number of player moves (including pushes as 1 move) taken to reach this node.
     pub moves: i32,
-    priority: i32,
+    /// A strategy-dependent priority value for the open list.
+    pub priority: i32,
+    /// Cached key used by the solver for transposition/stale checks.
+    pub key: u64,
 }
 
 impl Node {
-    /// Creates a new `Node`.
+    /// Creates a new `Node` and computes its priority according to the solver strategy.
+    ///
+    /// - `Fast` uses weighted A* in push space.
+    /// - `OptimalPush` uses `pushes + h`.
+    /// - `OptimalMove` uses `moves + h`.
     pub fn new(state: State, pushes: i32, moves: i32, solver: &Solver) -> Self {
-        let heuristic = state.heuristic(solver);
-        let priority = match solver.strategy() {
-            Strategy::Fast => heuristic,
-            Strategy::OptimalPush => pushes + heuristic,
-            Strategy::OptimalMove => moves + heuristic,
+        let mut state = state;
+        // Canonicalize player position for push-space strategies to avoid
+        // key collisions between equivalent player locations.
+        if solver.strategy() != Strategy::OptimalMove {
+            state.normalize(solver.map());
+        }
+        let key = solver.state_key(&state);
+        let h = state.heuristic(solver);
+
+        let priority = if h == i32::MAX {
+            i32::MAX
+        } else {
+            match solver.strategy() {
+                Strategy::Fast => {
+                    // Weighted A*: pushes + w*h
+                    let w = solver.fast_weight();
+                    pushes.saturating_add(((h as f32) * w).ceil() as i32)
+                }
+                Strategy::OptimalPush => pushes.saturating_add(h),
+                Strategy::OptimalMove => moves.saturating_add(h),
+            }
         };
+
         Self {
             state,
             pushes,
             moves,
             priority,
+            key,
         }
     }
 
-    /// Returns the successors of the node.
+    /// Generates successor nodes by enumerating all legal pushes.
+    ///
+    /// This function performs a single BFS to compute player reachability and
+    /// shortest move distances from the current player position. It then tests
+    /// each box and direction for:
+    ///
+    /// 1. Player can reach the behind-square.
+    /// 2. Destination square is free.
+    /// 3. Destination is not a dead square in the push-distance abstraction.
+    /// 4. Resulting configuration does not introduce a freeze deadlock.
+    ///
+    /// Tunnel macros are applied as forced sequences of pushes through corridors.
     pub fn successors(&self, solver: &Solver) -> Vec<Node> {
         let mut successors = Vec::new();
-        let player_reachable_area = reachable_area(self.state.player_position, |position| {
-            !solver.map()[position].intersects(Tiles::Wall)
-                && !self.state.box_positions.contains(&position)
+
+        // BFS once per expanded node for move-opt edge costs and reachability.
+        let dist = reachable_area_with_distances(self.state.player_position, |p| {
+            !solver.map()[p].intersects(Tiles::Wall) && !self.state.box_positions.contains(&p)
         });
-        // Creates successor states by pushing boxes
+
         for box_position in &self.state.box_positions {
             for push_direction in Direction::iter() {
+                let behind = box_position - &push_direction.into();
+                let Some(&d_behind) = dist.get(&behind) else { continue };
+
                 let mut new_box_position = box_position + &push_direction.into();
 
-                // Checks if the box can be pushed
-                if solver.map()[new_box_position].intersects(Tiles::Wall)
+                // Destination must be a free floor tile.
+                if !solver.map().in_bounds(new_box_position)
+                    || solver.map()[new_box_position].intersects(Tiles::Wall)
                     || self.state.box_positions.contains(&new_box_position)
-                    || !solver.lower_bounds().contains_key(&new_box_position)
                 {
                     continue;
                 }
 
-                // Checks if the player can push the box
-                if !player_reachable_area.contains(&(box_position - &push_direction.into())) {
+                // Dead-square pruning based on push-distance abstraction.
+                if !solver.lower_bounds().contains_key(&new_box_position) {
                     continue;
                 }
 
-                let mut new_player_position = *box_position;
-
+                let mut new_player_position = box_position;
                 let mut new_pushes = self.pushes + 1;
-                let mut new_moves = self.moves
-                    + find_path(
-                        self.state.player_position,
-                        new_player_position,
-                        |position| {
-                            !solver.map()[position].intersects(Tiles::Wall)
-                                && (!self.state.box_positions.contains(&position)
-                                    || position == *box_position)
-                        },
-                    )
-                    .unwrap()
-                    .len() as i32
-                    - 1;
+                let mut new_moves = self.moves + d_behind + 1; // walk behind + push
 
-                // Skip no influence pushes
-                while solver
-                    .tunnels()
-                    .contains(&(new_box_position, push_direction))
+                // Tunnel macro: optionally compress forced corridor segments.
+                while solver.tunnel_macros()
+                    && solver.is_tunnel(new_box_position, push_direction)
                 {
+                    let next = new_box_position + &push_direction.into();
+                    if !solver.map().in_bounds(next)
+                        || solver.map()[next].intersects(Tiles::Wall)
+                        || self.state.box_positions.contains(&next)
+                    {
+                        break;
+                    }
                     new_player_position = new_box_position;
-                    new_box_position += &push_direction.into();
+                    new_box_position = next;
                     new_pushes += 1;
                     new_moves += 1;
                 }
@@ -92,7 +133,7 @@ impl Node {
                 new_box_positions.remove(box_position);
                 new_box_positions.insert(new_box_position);
 
-                // Skip freeze deadlocks
+                // Skip freeze deadlocks (unless on a goal).
                 if !solver.map()[new_box_position].intersects(Tiles::Goal)
                     && is_freeze_deadlock(
                         solver.map(),
@@ -115,13 +156,14 @@ impl Node {
                 ));
             }
         }
+
         successors
     }
 }
 
 impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
-        self.state == other.state
+        self.priority == other.priority && self.key == other.key
     }
 }
 
