@@ -1,7 +1,11 @@
 //! A solver for the Sokoban problem.
 
 use crate::{
-    direction::Direction, math::IVector2, node::Node, path_finding::find_path, state::State,
+    direction::Direction,
+    math::IVector2,
+    node::Node,
+    path_finding::find_path,
+    state::{State, StateKey},
     Action, Actions, Map, SearchError, Tiles,
 };
 use std::{
@@ -183,39 +187,44 @@ impl Solver {
         self.fast_weight
     }
 
-    /// Returns the appropriate state key based on the search strategy.
+    /// Returns a transposition-table key for `state` under this solver's strategy.
     ///
-    /// - `OptimalMove` uses exact player position.
-    /// - `OptimalPush` and `Fast` normalize player position within its reachable region.
-    pub fn state_key(&self, state: &State) -> u64 {
-        match self.strategy {
-            Strategy::OptimalMove => state.key_move(),
-            Strategy::OptimalPush | Strategy::Fast => state.key_push_canonical(),
+    /// Push-space strategies normalize the player position before keying so
+    /// that two states with the player in different cells of the same
+    /// reachable region are treated as the same state. Move-optimal search
+    /// keeps the exact player position, since walking distance from there
+    /// affects future move cost.
+    ///
+    /// The returned [`StateKey`] caches a 64-bit hash for fast hash-map
+    /// lookups while comparing the full state on equality, so it is safe
+    /// against birthday-bound hash collisions.
+    pub fn canonical_key(&self, state: &State) -> StateKey {
+        let mut s = state.clone();
+        if self.strategy != Strategy::OptimalMove {
+            s.normalize(&self.map);
         }
+        StateKey::new(s)
     }
 
-    /// Searches for solution using A* / weighted A* depending on the strategy.
+    /// Searches for a solution using A* / weighted A* depending on the strategy.
     ///
-    /// This implementation maintains a best-known `g` score for each state key, allowing
-    /// it to **reopen states** when a cheaper path is found. This is required for
-    /// correctness for non-uniform costs (move-optimal search) and is still helpful for
-    /// push-optimal search.
+    /// Maintains a best-known `g` score for each state key and **reopens**
+    /// states when a cheaper path is found. Reopening is required for
+    /// correctness with non-uniform edge costs (move-optimal search) and is
+    /// still useful in push-optimal search even though edges are unit-cost.
     pub fn a_star_search(&self) -> Result<Actions, SearchError> {
         let mut heap = BinaryHeap::new();
 
-        // best known cost-to-come g(key)
-        let mut best_g: HashMap<u64, i32> = HashMap::new();
-
-        // Parent pointers and state storage for path reconstruction.
-        let mut parent: HashMap<u64, u64> = HashMap::new();
-        let mut states: HashMap<u64, State> = HashMap::new();
+        // Best known cost-to-come g(key). The key carries the full canonical
+        // state, so collisions are impossible.
+        let mut best_g: HashMap<StateKey, i32> = HashMap::new();
+        let mut parent: HashMap<StateKey, StateKey> = HashMap::new();
 
         let start: State = self.map.clone().into();
         let start_node = Node::new(start, 0, 0, self);
-        best_g.insert(start_node.key, 0);
-        // Store the canonical state representation that corresponds to this key.
-        states.insert(start_node.key, start_node.state.clone());
+        let start_key = StateKey::new(start_node.state.clone());
 
+        best_g.insert(start_key, 0);
         heap.push(start_node);
 
         let mut terminator = TerminatorInner::new(self.terminator);
@@ -226,27 +235,29 @@ impl Solver {
             }
 
             let g_here = self.node_g(&node);
+            let node_key = StateKey::new(node.state.clone());
 
-            // stale check: skip if this node is no longer the best known path to its key
-            if best_g.get(&node.key).copied() != Some(g_here) {
+            // Stale: another path to this state was found cheaper after we
+            // queued this node. Skip — we'll process the cheaper path's copy.
+            if best_g.get(&node_key).copied() != Some(g_here) {
                 continue;
             }
 
             if node.state.is_solved(self) {
-                return Ok(self.construct_actions_from_keys(node.key, &parent, &states));
+                return Ok(self.construct_actions(&node_key, &parent));
             }
 
             for succ in node.successors(self) {
                 let g_succ = self.node_g(&succ);
-                let old = best_g.get(&succ.key).copied().unwrap_or(i32::MAX);
+                let succ_key = StateKey::new(succ.state.clone());
+                let old = best_g.get(&succ_key).copied().unwrap_or(i32::MAX);
 
                 if g_succ >= old {
                     continue;
                 }
 
-                best_g.insert(succ.key, g_succ);
-                parent.insert(succ.key, node.key);
-                states.insert(succ.key, succ.state.clone());
+                best_g.insert(succ_key.clone(), g_succ);
+                parent.insert(succ_key, node_key.clone());
                 heap.push(succ);
             }
         }
@@ -288,7 +299,7 @@ impl Solver {
         let mut terminator = TerminatorInner::new(self.terminator);
 
         loop {
-            let mut visited: HashSet<u64> = HashSet::new();
+            let mut visited: HashSet<StateKey> = HashSet::new();
 
             match self.ida_dfs(&start, 0, 0, threshold, &mut visited, &mut terminator) {
                 IdaDfsResult::Found => return Ok(()),
@@ -305,15 +316,16 @@ impl Solver {
 
     /// Performs one IDA* depth-first search iteration for a given `threshold`.
     ///
-    /// This function uses **path-based** cycle checking via `visited`:
-    /// it inserts the current state's key on entry and removes it on return.
+    /// Uses **path-based** cycle checking via `visited`: the current state's
+    /// key is inserted on entry and removed on return, so only ancestors on
+    /// the current DFS path are considered "seen."
     fn ida_dfs(
         &self,
         state: &State,
         pushes: i32,
         moves: i32,
         threshold: i32,
-        visited: &mut HashSet<u64>,
+        visited: &mut HashSet<StateKey>,
         terminator: &mut TerminatorInner,
     ) -> IdaDfsResult {
         if terminator.tick() {
@@ -338,8 +350,8 @@ impl Solver {
             return IdaDfsResult::Found;
         }
 
-        let key = self.state_key(state);
-        if !visited.insert(key) {
+        let key = self.canonical_key(state);
+        if !visited.insert(key.clone()) {
             // Cycle on the current DFS path; ignore.
             return IdaDfsResult::NextThreshold(i32::MAX);
         }
@@ -528,33 +540,31 @@ impl Solver {
         tunnels
     }
 
-    /// Reconstructs the action sequence from a solved state key.
-    fn construct_actions_from_keys(
+    /// Reconstructs the player's action sequence from the solved-state key chain.
+    ///
+    /// The search runs in *push space* with player positions canonicalized, so
+    /// the player coordinate stored on each canonical state is not necessarily
+    /// where the player would actually be at that point in the playthrough.
+    /// To produce valid `Move`/`Push` actions we therefore:
+    ///
+    /// 1. Walk the parent chain to recover the sequence of pushes intended.
+    /// 2. Simulate forward from the real initial state, finding a player path
+    ///    to the cell behind each push using the *current simulated* state.
+    fn construct_actions(
         &self,
-        goal_key: u64,
-        parent: &HashMap<u64, u64>,
-        states: &HashMap<u64, State>,
+        goal_key: &StateKey,
+        parent: &HashMap<StateKey, StateKey>,
     ) -> Actions {
-        // IMPORTANT:
-        // For push-space strategies we canonicalize the player position within its
-        // reachable region. This is correct for pruning/search, but it means
-        // `State.player_position` is not necessarily the player position that would
-        // result from executing the reconstructed move sequence.
-        //
-        // To guarantee validity, we reconstruct *push intentions* from the parent chain,
-        // then simulate forward from the real initial state, re-pathfinding before each
-        // push using the current simulated player position and box configuration.
-
-        // 1) Build key chain from start -> goal.
-        let mut chain: Vec<u64> = vec![goal_key];
+        // 1) Build the chain of canonical states from start → goal.
+        let mut chain: Vec<&StateKey> = vec![goal_key];
         let mut k = goal_key;
-        while let Some(&pk) = parent.get(&k) {
+        while let Some(pk) = parent.get(k) {
             chain.push(pk);
             k = pk;
         }
         chain.reverse();
 
-        // 2) Convert state transitions into push steps.
+        // 2) Convert each state-to-state transition into a push step.
         #[derive(Clone, Copy, Debug)]
         struct PushStep {
             from: IVector2,
@@ -564,8 +574,8 @@ impl Solver {
 
         let mut steps: Vec<PushStep> = Vec::with_capacity(chain.len().saturating_sub(1));
         for win in chain.windows(2) {
-            let prev = states.get(&win[0]).expect("missing prev state");
-            let cur = states.get(&win[1]).expect("missing cur state");
+            let prev = win[0].state();
+            let cur = win[1].state();
 
             let prev_box = prev
                 .box_positions
@@ -591,7 +601,7 @@ impl Solver {
             });
         }
 
-        // 3) Simulate forward from the actual initial state.
+        // 3) Simulate forward from the actual initial state, emitting moves.
         let mut actions = Actions::new();
         let mut sim_state: State = self.map.clone().into();
 

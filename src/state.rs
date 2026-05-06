@@ -9,6 +9,7 @@ use crate::{
     Map, Tiles,
 };
 
+/// A Sokoban state: where the player and every box currently sit.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct State {
     pub player_position: IVector2,
@@ -16,9 +17,8 @@ pub struct State {
 }
 
 impl State {
-    /// Returns true if the state is solved.
+    /// Returns true iff every box sits on a goal.
     pub fn is_solved(&self, solver: &Solver) -> bool {
-        // Check if all box positions match goal positions
         if self.box_positions.len() != solver.map().goal_positions().len() {
             return false;
         }
@@ -30,18 +30,14 @@ impl State {
         true
     }
 
-    /// Returns an admissible heuristic estimate for the state.
-///
-/// This heuristic is the **minimum-cost perfect matching** between boxes and goals.
-/// The cost of assigning a given box to a given goal is the precomputed *push distance*
-/// from the box position to the goal, ignoring other boxes.
-///
-/// This is a much tighter lower bound than summing each box's nearest-goal distance,
-/// because it respects the one-to-one assignment constraint.
-///
-/// If no perfect matching exists (some box cannot reach any goal in the abstraction),
-/// this function returns `i32::MAX` to signal a provable dead end in the abstraction.
-pub fn heuristic(&self, solver: &Solver) -> i32 {
+    /// Returns an admissible push-count lower bound from the bipartite matching
+    /// of boxes to goals over the precomputed empty-board push distances.
+    ///
+    /// This is much tighter than summing each box's nearest-goal distance —
+    /// the matching enforces the one-to-one assignment constraint. If no
+    /// perfect matching exists (some box can't reach any goal in the abstraction),
+    /// returns `i32::MAX` to mark the state as a provable dead end.
+    pub fn heuristic(&self, solver: &Solver) -> i32 {
         let goals: Vec<IVector2> = solver.map().goal_positions().iter().copied().collect();
         let boxes: Vec<IVector2> = self.box_positions.iter().collect();
 
@@ -70,56 +66,121 @@ pub fn heuristic(&self, solver: &Solver) -> i32 {
         }
     }
 
-    /// Normalizes the state.
+    /// Normalizes the player position to the top-left of its reachable area.
+    ///
+    /// Two states with identical box configurations and player positions in
+    /// the same reachable region collapse to the same normalized state. Used
+    /// by push-space search to deduplicate states that differ only in the
+    /// player's standing position within an open region.
     pub fn normalize(&mut self, map: &Map) {
         self.player_position = normalized_area(&reachable_area(self.player_position, |position| {
             !(map[position].intersects(Tiles::Wall) || self.box_positions.contains(&position))
         }))
         .unwrap();
     }
-
-    /// Returns the hash key for push-optimal search.
-    /// Normalizes player position to the top-left of the reachable area.
-    /// This is safe for push-optimal because player position within a reachable
-    /// region doesn't affect push count.
-    pub fn key_push(&self, map: &Map) -> u64 {
-        let mut normalized_state = self.clone();
-        normalized_state.normalize(map);
-        let mut hasher = DefaultHasher::new();
-        normalized_state.hash(&mut hasher);
-        hasher.finish()
-    }
-
-    /// Returns the hash key for move-optimal search.
-    /// Uses exact player position because different player positions with
-    /// the same box configuration can have different future move costs.
-    pub fn key_move(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
-    }
-
-    /// Returns the hash key for push-space strategies **assuming the state is already normalized**.
-    ///
-    /// This avoids re-running reachability-based normalization when the caller has already
-    /// canonicalized `player_position` via [`State::normalize`].
-    ///
-    /// # Correctness
-    ///
-    /// This must only be used when `player_position` has been normalized with respect to the
-    /// current box configuration.
-    pub fn key_push_canonical(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
-    }
 }
 
 impl Hash for State {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.player_position.hash(state);
-        // BoxSet already hashes deterministically (bits are in fixed order)
+        // BoxSet hashes deterministically (raw bit-array order is fixed).
         self.box_positions.hash(state);
+    }
+}
+
+/// A collision-safe transposition-table key.
+///
+/// Wraps a fully canonicalized [`State`] together with a precomputed 64-bit
+/// hash. The cached hash makes hash-map lookups very cheap — the [`Hash`]
+/// implementation forwards to the cached `u64` — while equality compares the
+/// *full* state, so the rare two states that happen to share a `u64` digest
+/// are still distinguished correctly.
+///
+/// Why this matters: the search loop performs ~10⁶–10⁹ transposition-table
+/// lookups, and a `u64`-only key produces silent collisions at the birthday
+/// bound. A collision corrupts `best_g` and the parent chain, giving wrong
+/// answers with no warning.
+///
+/// The contained state must already be canonical for the caller's strategy.
+/// Use [`Solver::canonical_key`] to construct one safely from any state.
+#[derive(Clone, Debug)]
+pub struct StateKey {
+    state: State,
+    hash: u64,
+}
+
+impl StateKey {
+    /// Builds a key from an already-canonicalized state.
+    pub fn new(state: State) -> Self {
+        let mut hasher = DefaultHasher::new();
+        state.hash(&mut hasher);
+        Self {
+            state,
+            hash: hasher.finish(),
+        }
+    }
+
+    /// Returns the canonical state behind this key.
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+}
+
+impl PartialEq for StateKey {
+    fn eq(&self, other: &Self) -> bool {
+        // Cheap reject on hash mismatch, full check on hit.
+        self.hash == other.hash && self.state == other.state
+    }
+}
+
+impl Eq for StateKey {}
+
+impl Hash for StateKey {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.hash.hash(hasher);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn make_state(player: (i32, i32), boxes: &[(i32, i32)]) -> State {
+        let mut box_positions = BoxSet::new(8);
+        for (x, y) in boxes {
+            box_positions.insert(IVector2::new(*x, *y));
+        }
+        State {
+            player_position: IVector2::new(player.0, player.1),
+            box_positions,
+        }
+    }
+
+    #[test]
+    fn equal_states_produce_equal_keys() {
+        let a = StateKey::new(make_state((1, 1), &[(2, 2), (3, 3)]));
+        let b = StateKey::new(make_state((1, 1), &[(3, 3), (2, 2)]));
+        assert_eq!(a, b, "BoxSet is order-independent; keys must match");
+    }
+
+    #[test]
+    fn different_states_produce_different_keys() {
+        let a = StateKey::new(make_state((1, 1), &[(2, 2)]));
+        let b = StateKey::new(make_state((1, 1), &[(2, 3)]));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn keys_round_trip_through_hashmap() {
+        let mut map: HashMap<StateKey, i32> = HashMap::new();
+        let key = StateKey::new(make_state((1, 1), &[(2, 2)]));
+        map.insert(key.clone(), 42);
+
+        // A freshly-built key for the same state must hit the same entry.
+        let lookup = StateKey::new(make_state((1, 1), &[(2, 2)]));
+        assert_eq!(map.get(&lookup), Some(&42));
     }
 }
 

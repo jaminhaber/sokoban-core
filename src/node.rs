@@ -1,9 +1,9 @@
 //! Search node representation and successor generation.
 
-use std::{cmp::Ordering, collections::HashSet};
+use std::cmp::Ordering;
 
 use crate::{
-    deadlock::is_freeze_deadlock,
+    deadlock::introduces_freeze_deadlock,
     direction::Direction,
     path_finding::reachable_area_with_distances,
     solver::{Solver, Strategy},
@@ -14,10 +14,11 @@ use crate::{
 /// A node in the search frontier.
 ///
 /// Stores both push and move costs so multiple strategies can share the same
-/// successor generator.
+/// successor generator. The state is stored canonically — for push-space
+/// strategies the player position has already been normalized.
 #[derive(Clone, Eq, Debug)]
 pub struct Node {
-    /// The Sokoban state at this node.
+    /// The canonical Sokoban state at this node.
     pub state: State,
     /// Number of pushes taken to reach this node.
     pub pushes: i32,
@@ -25,8 +26,6 @@ pub struct Node {
     pub moves: i32,
     /// A strategy-dependent priority value for the open list.
     pub priority: i32,
-    /// Cached key used by the solver for transposition/stale checks.
-    pub key: u64,
 }
 
 impl Node {
@@ -37,12 +36,12 @@ impl Node {
     /// - `OptimalMove` uses `moves + h`.
     pub fn new(state: State, pushes: i32, moves: i32, solver: &Solver) -> Self {
         let mut state = state;
-        // Canonicalize player position for push-space strategies to avoid
-        // key collisions between equivalent player locations.
+        // Canonicalize player position for push-space strategies so that
+        // equivalent player locations within the same reachable region
+        // collapse to a single transposition-table entry.
         if solver.strategy() != Strategy::OptimalMove {
             state.normalize(solver.map());
         }
-        let key = solver.state_key(&state);
         let h = state.heuristic(solver);
 
         let priority = if h == i32::MAX {
@@ -64,7 +63,6 @@ impl Node {
             pushes,
             moves,
             priority,
-            key,
         }
     }
 
@@ -133,15 +131,10 @@ impl Node {
                 new_box_positions.remove(box_position);
                 new_box_positions.insert(new_box_position);
 
-                // Skip freeze deadlocks (unless on a goal).
-                if !solver.map()[new_box_position].intersects(Tiles::Goal)
-                    && is_freeze_deadlock(
-                        solver.map(),
-                        new_box_position,
-                        &new_box_positions,
-                        &mut HashSet::new(),
-                    )
-                {
+                // Skip pushes that freeze any off-goal box. Note: the pushed
+                // box being on a goal is *not* enough — we must check the whole
+                // frozen connected component (see `introduces_freeze_deadlock`).
+                if introduces_freeze_deadlock(solver.map(), new_box_position, &new_box_positions) {
                     continue;
                 }
 
@@ -162,8 +155,11 @@ impl Node {
 }
 
 impl PartialEq for Node {
+    // BinaryHeap only consults `Ord`, so this just needs to be consistent with
+    // it. Comparing on priority alone is enough — and avoids an expensive
+    // full-state equality check on every push/pop.
     fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority && self.key == other.key
+        self.priority == other.priority
     }
 }
 

@@ -55,6 +55,36 @@ title: Weird 3
     }
 }
 
+/// Solving the same level twice must produce byte-identical action sequences.
+/// Catches accidental dependence on hash-iteration order or any other
+/// non-deterministic data structure in the search hot path.
+#[test]
+fn solver_is_deterministic() {
+    let cases: &[(&str, usize)] = &[
+        ("assets/Microban_155.xsb", 1),
+        ("assets/Microban_155.xsb", 7),
+        ("assets/Microban_155.xsb", 50),
+        ("assets/BoxWorld_100.xsb", 3),
+    ];
+
+    for (path, idx) in cases {
+        let map = load_level_from_file(path, *idx).map().clone();
+
+        let first = Solver::new(map.clone(), Strategy::Fast)
+            .a_star_search()
+            .unwrap();
+        let second = Solver::new(map.clone(), Strategy::Fast)
+            .a_star_search()
+            .unwrap();
+
+        assert_eq!(
+            first, second,
+            "{} #{}: solver returned different action sequences across runs",
+            path, idx
+        );
+    }
+}
+
 #[test]
 fn test_terminator_iterations_limit() {
     let level = load_level_from_file("assets/BoxWorld_100.xsb", 3);

@@ -48,6 +48,28 @@ pub fn is_static_deadlock(
     true
 }
 
+/// Returns `true` iff pushing a box to `box_position` creates a freeze deadlock.
+///
+/// A freeze deadlock occurs when a connected group of mutually immovable boxes
+/// (the *frozen component*) contains at least one box that is not on a goal:
+/// that box is permanently stuck off-goal, so the puzzle can no longer be solved.
+///
+/// Importantly, it is not sufficient to check that the *pushed* box is on a
+/// goal. Pushing onto a goal can freeze a neighbor that is off-goal, which is
+/// still a deadlock. This helper walks the whole frozen component and reports
+/// a deadlock if any member is off-goal.
+pub fn introduces_freeze_deadlock(
+    map: &Map,
+    box_position: IVector2,
+    box_positions: &BoxSet,
+) -> bool {
+    let mut frozen = HashSet::new();
+    if !is_freeze_deadlock(map, box_position, box_positions, &mut frozen) {
+        return false;
+    }
+    frozen.iter().any(|p| !map[*p].intersects(Tiles::Goal))
+}
+
 /// Checks if the given box position is a freeze deadlock.
 pub fn is_freeze_deadlock(
     map: &Map,
@@ -202,4 +224,85 @@ pub fn calculate_useless_boxes(map: &Map) -> HashSet<IVector2> {
             is_freeze_deadlock(map, position, map.box_positions(), &mut HashSet::new())
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    /// Vertical corridor with two boxes and two goals. Pushing the lower box up
+    /// onto the lower goal puts the upper box (off-goal) into a position where
+    /// its only escape is downward — but downward is now blocked by the just-
+    /// pushed box. Both boxes are frozen; the upper one is off-goal, so this
+    /// is a deadlock.
+    ///
+    /// Layout (XSB top → bottom):
+    /// ```text
+    /// #####
+    /// ##.##   upper goal  (code-y = 5)
+    /// ##$##   upper box   (code-y = 4)  <- becomes frozen off-goal
+    /// ##.##   lower goal  (code-y = 3)  <- pushed-onto goal
+    /// ##$##   lower box   (code-y = 2)
+    /// ##@##   player      (code-y = 1)
+    /// #####
+    /// ```
+    const TWO_BOX_CORRIDOR: &str = "#####\n##.##\n##$##\n##.##\n##$##\n##@##\n#####\n";
+
+    #[test]
+    fn introduces_freeze_deadlock_freezes_off_goal_neighbor() {
+        let map = Map::from_str(TWO_BOX_CORRIDOR).unwrap();
+        // Simulate the upward push: lower box (2,2) -> (2,3); upper box stays.
+        let pushed_to = IVector2::new(2, 3);
+        let upper = IVector2::new(2, 4);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to, upper]);
+
+        // Sanity: the just-pushed box sits on a goal, the upper box does not.
+        assert!(map[pushed_to].intersects(Tiles::Goal));
+        assert!(!map[upper].intersects(Tiles::Goal));
+
+        // The new helper must flag this as a deadlock even though the *pushed*
+        // box ended up on a goal — the upper box is frozen off-goal.
+        assert!(introduces_freeze_deadlock(&map, pushed_to, &post_push));
+    }
+
+    #[test]
+    fn introduces_freeze_deadlock_allows_pushed_box_alone_on_goal() {
+        // Same map, but no second box: pushing one box onto a goal in an open
+        // corridor is fine.
+        let xsb = "#####\n##.##\n##$##\n##@##\n#####\n";
+        let map = Map::from_str(xsb).unwrap();
+        let pushed_to = IVector2::new(2, 3);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
+        assert!(!introduces_freeze_deadlock(&map, pushed_to, &post_push));
+    }
+
+    #[test]
+    fn introduces_freeze_deadlock_allows_full_group_on_goals() {
+        // Same vertical corridor, but the upper box already sits on a goal (`*`).
+        // After pushing the lower box up, both frozen boxes are on goals → ok.
+        let xsb = "#####\n##*##\n##.##\n##$##\n##@##\n#####\n";
+        let map = Map::from_str(xsb).unwrap();
+        let pushed_to = IVector2::new(2, 3);
+        let upper = IVector2::new(2, 4);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to, upper]);
+
+        assert!(map[pushed_to].intersects(Tiles::Goal));
+        assert!(map[upper].intersects(Tiles::Goal));
+
+        assert!(!introduces_freeze_deadlock(&map, pushed_to, &post_push));
+    }
+
+    #[test]
+    fn introduces_freeze_deadlock_flags_off_goal_corner() {
+        // Pushing a box into a non-goal corner is the canonical freeze deadlock.
+        let xsb = "#####\n#  .#\n# $@#\n#####\n";
+        let map = Map::from_str(xsb).unwrap();
+        // A hypothetical push that lands the box in the bottom-left corner.
+        let pushed_to = IVector2::new(1, 1);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
+        assert!(!map[pushed_to].intersects(Tiles::Goal));
+        assert!(introduces_freeze_deadlock(&map, pushed_to, &post_push));
+    }
 }
