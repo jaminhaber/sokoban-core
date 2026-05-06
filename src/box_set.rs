@@ -276,4 +276,65 @@ mod tests {
         assert!(!set.contains(&IVector2::new(1, 2)));
         assert!(!set.contains(&IVector2::new(5, 5)));
     }
+
+    #[test]
+    fn test_width_returns_constructor_arg() {
+        let set = BoxSet::new(13);
+        assert_eq!(set.width(), 13);
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let mut set = BoxSet::new(8);
+        assert!(set.is_empty());
+        set.insert(IVector2::new(2, 2));
+        assert!(!set.is_empty());
+        set.remove(IVector2::new(2, 2));
+        assert!(set.is_empty());
+    }
+
+    #[test]
+    fn test_from_iter_dedupes() {
+        let positions = [
+            IVector2::new(1, 2),
+            IVector2::new(3, 4),
+            IVector2::new(1, 2), // duplicate
+        ];
+        let set = BoxSet::from_iter(8, positions);
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&IVector2::new(1, 2)));
+        assert!(set.contains(&IVector2::new(3, 4)));
+    }
+
+    #[test]
+    fn test_difference() {
+        let a = BoxSet::from_iter(8, [IVector2::new(1, 1), IVector2::new(2, 2), IVector2::new(3, 3)]);
+        let b = BoxSet::from_iter(8, [IVector2::new(2, 2)]);
+
+        let diff: Vec<IVector2> = a.difference(&b).collect();
+        assert_eq!(diff.len(), 2);
+        assert!(diff.contains(&IVector2::new(1, 1)));
+        assert!(diff.contains(&IVector2::new(3, 3)));
+        assert!(!diff.contains(&IVector2::new(2, 2)));
+    }
+
+    #[test]
+    fn test_into_iter_for_reference() {
+        // `&BoxSet: IntoIterator` lets you use a `for` loop directly.
+        let set = BoxSet::from_iter(8, [IVector2::new(1, 2), IVector2::new(3, 4)]);
+        let mut count = 0;
+        for _pos in &set {
+            count += 1;
+        }
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_remove_idempotent_after_first_call() {
+        let mut set = BoxSet::new(8);
+        set.insert(IVector2::new(2, 2));
+        assert!(set.remove(IVector2::new(2, 2)));
+        assert!(!set.remove(IVector2::new(2, 2)));
+        assert!(!set.remove(IVector2::new(2, 2)));
+    }
 }

@@ -37,7 +37,21 @@ impl State {
     /// the matching enforces the one-to-one assignment constraint. If no
     /// perfect matching exists (some box can't reach any goal in the abstraction),
     /// returns `i32::MAX` to mark the state as a provable dead end.
+    ///
+    /// The result is cached by box configuration on the solver, since the
+    /// matching depends only on box positions and many states share the same
+    /// `BoxSet` during a search.
     pub fn heuristic(&self, solver: &Solver) -> i32 {
+        if let Some(cached) = solver.cached_heuristic(&self.box_positions) {
+            return cached;
+        }
+
+        let h = self.compute_heuristic(solver);
+        solver.cache_heuristic(self.box_positions.clone(), h);
+        h
+    }
+
+    fn compute_heuristic(&self, solver: &Solver) -> i32 {
         let goals: Vec<IVector2> = solver.map().goal_positions().iter().copied().collect();
         let boxes: Vec<IVector2> = self.box_positions.iter().collect();
 

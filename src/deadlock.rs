@@ -70,6 +70,54 @@ pub fn introduces_freeze_deadlock(
     frozen.iter().any(|p| !map[*p].intersects(Tiles::Goal))
 }
 
+/// Returns `true` iff pushing a box to `box_position` closes a 2×2 block of
+/// wall-or-box cells in which at least one of the boxes is off-goal.
+///
+/// Such a block is a *closed-diagonal* deadlock: every box in the 2×2 has its
+/// two in-block neighbors blocked (by box or wall on each axis), so none of
+/// them can ever be pushed out. The recursive freeze check normally catches
+/// this, but it can short-circuit at the first wall-blocked box without
+/// visiting the whole frozen cluster, missing off-goal members elsewhere in
+/// the same 2×2. This O(1) check fills that gap.
+///
+/// Only the four 2×2 blocks that contain `box_position` are inspected, since
+/// no other 2×2 block could change because of this push.
+pub fn introduces_2x2_deadlock(
+    map: &Map,
+    box_position: IVector2,
+    box_positions: &BoxSet,
+) -> bool {
+    let (x, y) = (box_position.x, box_position.y);
+
+    // The four 2×2 blocks containing (x, y), keyed by their bottom-left corner.
+    for &(cx, cy) in &[(x - 1, y - 1), (x, y - 1), (x - 1, y), (x, y)] {
+        let cells = [
+            IVector2::new(cx, cy),
+            IVector2::new(cx + 1, cy),
+            IVector2::new(cx, cy + 1),
+            IVector2::new(cx + 1, cy + 1),
+        ];
+
+        // The block must be fully in bounds and every cell must be wall-or-box.
+        let all_blocked = cells.iter().all(|p| {
+            map.in_bounds(*p) && (map[*p].intersects(Tiles::Wall) || box_positions.contains(p))
+        });
+        if !all_blocked {
+            continue;
+        }
+
+        // At least one box in the block must be off-goal for it to be a deadlock.
+        let any_off_goal = cells
+            .iter()
+            .any(|p| box_positions.contains(p) && !map[*p].intersects(Tiles::Goal));
+        if any_off_goal {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Checks if the given box position is a freeze deadlock.
 pub fn is_freeze_deadlock(
     map: &Map,
@@ -304,5 +352,103 @@ mod tests {
         let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
         assert!(!map[pushed_to].intersects(Tiles::Goal));
         assert!(introduces_freeze_deadlock(&map, pushed_to, &post_push));
+    }
+
+    /// Open 8×5 inner area with a single starting box and goal far from where
+    /// the tests place hypothetical 2×2 box clusters. Used as a wall-free
+    /// playground so the 2×2 helper sees only boxes and floor.
+    const PLAYGROUND: &str = "##########\n\
+                              #        #\n\
+                              #        #\n\
+                              #        #\n\
+                              #        #\n\
+                              #@$  .   #\n\
+                              ##########\n";
+
+    #[test]
+    fn introduces_2x2_deadlock_pure_box_block_off_goal() {
+        let map = Map::from_str(PLAYGROUND).unwrap();
+        // Four boxes at (3,1)..(4,2) on plain floor, none on goals.
+        let boxes = BoxSet::from_iter(
+            map.dimensions().x,
+            [
+                IVector2::new(3, 1),
+                IVector2::new(4, 1),
+                IVector2::new(3, 2),
+                IVector2::new(4, 2),
+            ],
+        );
+        // Pretend the most recent push landed on (4, 2).
+        assert!(introduces_2x2_deadlock(&map, IVector2::new(4, 2), &boxes));
+    }
+
+    #[test]
+    fn introduces_2x2_deadlock_all_on_goals_is_ok() {
+        // The 2×2 at (4,2)..(5,3) is all `*` — boxes already on goals.
+        let xsb = "############\n\
+                   #          #\n\
+                   #@         #\n\
+                   #          #\n\
+                   #   **     #\n\
+                   #   **     #\n\
+                   #          #\n\
+                   ############\n";
+        let map = Map::from_str(xsb).unwrap();
+        let boxes = BoxSet::from_iter(
+            map.dimensions().x,
+            [
+                IVector2::new(4, 2),
+                IVector2::new(5, 2),
+                IVector2::new(4, 3),
+                IVector2::new(5, 3),
+            ],
+        );
+        assert!(!introduces_2x2_deadlock(&map, IVector2::new(5, 3), &boxes));
+    }
+
+    #[test]
+    fn introduces_2x2_deadlock_three_boxes_one_wall() {
+        // Internal wall at (3, 3); three test boxes complete the 2×2 at
+        // corner (2,2)..(3,3) — that's 3 boxes + 1 wall = closed.
+        let xsb = "##########\n\
+                   #        #\n\
+                   #  #     #\n\
+                   #        #\n\
+                   #@$.     #\n\
+                   ##########\n";
+        let map = Map::from_str(xsb).unwrap();
+        let boxes = BoxSet::from_iter(
+            map.dimensions().x,
+            [
+                IVector2::new(2, 2),
+                IVector2::new(3, 2),
+                IVector2::new(2, 3),
+            ],
+        );
+        assert!(introduces_2x2_deadlock(&map, IVector2::new(3, 2), &boxes));
+    }
+
+    #[test]
+    fn introduces_2x2_deadlock_open_cell_is_ok() {
+        // Three boxes don't close a 2×2 — the fourth cell is floor.
+        let map = Map::from_str(PLAYGROUND).unwrap();
+        let boxes = BoxSet::from_iter(
+            map.dimensions().x,
+            [
+                IVector2::new(3, 1),
+                IVector2::new(4, 1),
+                IVector2::new(3, 2),
+            ],
+        );
+        assert!(!introduces_2x2_deadlock(&map, IVector2::new(3, 2), &boxes));
+    }
+
+    #[test]
+    fn introduces_2x2_deadlock_corner_with_three_walls() {
+        // (1,1) sits in the bottom-left interior corner — three of the four
+        // cells of the 2×2 anchored at (0,0) are walls.
+        let map = Map::from_str(PLAYGROUND).unwrap();
+        let boxes = BoxSet::from_iter(map.dimensions().x, [IVector2::new(1, 1)]);
+        assert!(introduces_2x2_deadlock(&map, IVector2::new(1, 1), &boxes));
     }
 }

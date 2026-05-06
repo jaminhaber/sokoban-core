@@ -1,7 +1,7 @@
 use std::{fs, str::FromStr};
 
 use indoc::indoc;
-use sokoban_core::{Level, ParseLevelError, ParseMapError};
+use sokoban_core::{direction::Direction, ActionError, Level, ParseLevelError, ParseMapError};
 
 mod utils;
 use utils::*;
@@ -165,6 +165,124 @@ fn create_level_with_rle_xsb() {
         Level::from_str(MICROBAN2_132_RLE).unwrap(),
         load_level_from_file("assets/Microban II_135.xsb", 132)
     );
+}
+
+/// `do_action` errors when the player walks into a wall.
+#[test]
+fn do_action_blocked_by_wall_returns_move_blocked() {
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+    // Player is at column 1 (next to the left wall) — moving Left hits a wall.
+    assert_eq!(level.do_action(Direction::Left), Err(ActionError::MoveBlocked));
+}
+
+/// `do_action` errors when a push is blocked by a wall behind the box.
+#[test]
+fn do_action_blocked_push_returns_push_blocked() {
+    // Pushing right tries to push the box at column 2 into the wall at column 3.
+    // The goal at column 4 keeps box/goal counts balanced for the parser.
+    let xsb = r#"
+        ######
+        #@$#.#
+        ######
+    "#;
+    let mut level = Level::from_str(xsb).unwrap();
+    assert_eq!(level.do_action(Direction::Right), Err(ActionError::PushBlocked));
+}
+
+#[test]
+fn undo_then_redo_round_trips_to_solved_state() {
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+    assert!(!level.is_solved());
+
+    // Solve with a single right-push.
+    level.do_action(Direction::Right).unwrap();
+    assert!(level.is_solved());
+    let solved_actions = level.actions().clone();
+
+    // Undo: back to the start, no longer solved.
+    level.undo_action().unwrap();
+    assert!(!level.is_solved());
+    assert!(level.actions().is_empty());
+
+    // Redo: back to solved with the same recorded action sequence.
+    level.redo_action().unwrap();
+    assert!(level.is_solved());
+    assert_eq!(level.actions(), &solved_actions);
+}
+
+#[test]
+fn undo_with_no_actions_returns_no_actions_error() {
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+    assert_eq!(level.undo_action(), Err(ActionError::NoActions));
+}
+
+#[test]
+fn redo_with_nothing_to_redo_returns_no_undone_actions_error() {
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+    // Nothing was ever undone.
+    assert_eq!(level.redo_action(), Err(ActionError::NoUndoneActions));
+
+    // After a do, the undone-stack is still empty.
+    level.do_action(Direction::Right).unwrap();
+    assert_eq!(level.redo_action(), Err(ActionError::NoUndoneActions));
+}
+
+#[test]
+fn doing_a_new_action_clears_redo_history() {
+    let xsb = r#"
+        ######
+        #@ $.#
+        ######
+    "#;
+    let mut level = Level::from_str(xsb).unwrap();
+
+    level.do_action(Direction::Right).unwrap();
+    level.undo_action().unwrap();
+    // A fresh action should drop the previously-undone action.
+    level.do_action(Direction::Right).unwrap();
+    assert_eq!(level.redo_action(), Err(ActionError::NoUndoneActions));
+}
+
+#[test]
+fn is_solved_tracks_box_on_goal_state() {
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+    assert!(!level.is_solved());
+    level.do_action(Direction::Right).unwrap();
+    assert!(level.is_solved());
+    level.undo_action().unwrap();
+    assert!(!level.is_solved());
+}
+
+#[test]
+fn set_metadata_overwrites_existing_metadata() {
+    use std::collections::BTreeMap;
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+
+    let mut meta = BTreeMap::new();
+    meta.insert("title".to_string(), "Custom".to_string());
+    meta.insert("author".to_string(), "Tester".to_string());
+    level.set_metadata(meta);
+
+    assert_eq!(level.metadata()["title"], "Custom");
+    assert_eq!(level.metadata()["author"], "Tester");
+}
+
+#[test]
+fn player_reachable_area_excludes_walls_and_boxes() {
+    let level = Level::from_str(SIMPLEST).unwrap();
+    let area = level.player_reachable_area();
+    // The reachable region is just the player cell — the box at column 2
+    // blocks it from reaching column 3.
+    assert_eq!(area.len(), 1);
+}
+
+#[test]
+fn from_map_round_trips_through_into() {
+    let level = Level::from_str(SIMPLEST).unwrap();
+    let map = level.map().clone();
+    let level2 = Level::from_map(map.clone());
+    let map_back: sokoban_core::Map = level2.into();
+    assert_eq!(map, map_back);
 }
 
 // Simplest level

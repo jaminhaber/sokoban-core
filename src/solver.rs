@@ -1,6 +1,7 @@
 //! A solver for the Sokoban problem.
 
 use crate::{
+    box_set::BoxSet,
     direction::Direction,
     math::IVector2,
     node::Node,
@@ -9,10 +10,15 @@ use crate::{
     Action, Actions, Map, SearchError, Tiles,
 };
 use std::{
-    cell::OnceCell,
+    cell::{OnceCell, RefCell},
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     time::Duration,
 };
+
+/// Maximum number of heuristic-cache entries before a wholesale flush. At
+/// ~520 bytes per entry (BoxSet + i32 + map overhead), 1M caps memory near
+/// 520 MB. Tune up if you have memory headroom and search hard levels.
+const HEURISTIC_CACHE_LIMIT: usize = 1_000_000;
 
 /// The strategy to use when searching for a solution.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
@@ -54,6 +60,15 @@ pub struct Solver {
 
     // tunnel macros keyed by (box_position, push_direction)
     tunnels: OnceCell<HashSet<(IVector2, Direction)>>,
+
+    // Heuristic memoization keyed on box configuration. The matching heuristic
+    // depends only on box positions (player position is irrelevant), so the
+    // same h-value applies to every state with the same `BoxSet`. A* and IDA*
+    // visit each `BoxSet` many times, often with different player positions or
+    // along different paths; this avoids paying the O(n·2ⁿ) matching cost on
+    // every revisit. Wrapped in `RefCell` because `State::heuristic` is called
+    // through `&Solver`.
+    heuristic_cache: RefCell<HashMap<BoxSet, i32>>,
 
     terminator: Terminator,
 }
@@ -131,8 +146,27 @@ impl Solver {
             lower_bounds: OnceCell::new(),
             distance_matrix: OnceCell::new(),
             tunnels: OnceCell::new(),
+            heuristic_cache: RefCell::new(HashMap::new()),
             terminator: Terminator::None,
         }
+    }
+
+    /// Returns the cached heuristic for `boxes`, if any.
+    pub(crate) fn cached_heuristic(&self, boxes: &BoxSet) -> Option<i32> {
+        self.heuristic_cache.borrow().get(boxes).copied()
+    }
+
+    /// Records `h` as the heuristic for `boxes` in the per-solver cache.
+    ///
+    /// The cache is hard-capped at [`HEURISTIC_CACHE_LIMIT`] entries. Once
+    /// full it is cleared rather than evicted entry-by-entry — losing some
+    /// hits is acceptable, but unbounded growth on hard searches is not.
+    pub(crate) fn cache_heuristic(&self, boxes: BoxSet, h: i32) {
+        let mut cache = self.heuristic_cache.borrow_mut();
+        if cache.len() >= HEURISTIC_CACHE_LIMIT {
+            cache.clear();
+        }
+        cache.insert(boxes, h);
     }
 
     /// Enables or disables tunnel macro compression.

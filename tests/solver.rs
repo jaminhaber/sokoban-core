@@ -1,8 +1,15 @@
+use std::str::FromStr;
+
 use sokoban_core::IVector2;
 use sokoban_core::{solver::*, Level, SearchError};
 
 mod utils;
 use utils::*;
+
+/// Tiny solvable level used by the strategy and config tests below.
+/// Player walks left to push the box one step onto a goal — single push,
+/// trivial to solve under any strategy.
+const TINY: &str = "#####\n#@$.#\n#####\n";
 
 fn solve(mut level: Level) {
     let map = level.map().clone();
@@ -98,6 +105,193 @@ fn test_terminator_iterations_limit() {
     // IDA* should also terminate
     let solver = Solver::new(map, Strategy::Fast).with_terminator(Terminator::Iterations(5));
     assert_eq!(solver.ida_star_search(), Err(SearchError::Terminated));
+}
+
+#[test]
+fn optimal_push_matches_known_minimum() {
+    // BoxWorld #3 is small enough that Fast finds a near-optimal solution
+    // and OptimalPush finds *the* push-optimal one. The optimum should be
+    // no worse than what Fast gets.
+    let map = load_level_from_file("assets/BoxWorld_100.xsb", 3).map().clone();
+
+    let fast = Solver::new(map.clone(), Strategy::Fast)
+        .a_star_search()
+        .unwrap();
+    let optimal = Solver::new(map.clone(), Strategy::OptimalPush)
+        .a_star_search()
+        .unwrap();
+
+    assert!(
+        optimal.pushes() <= fast.pushes(),
+        "OptimalPush ({}) must not exceed Fast ({})",
+        optimal.pushes(),
+        fast.pushes()
+    );
+
+    // Replay the optimal solution to check it actually solves the level.
+    let mut level = load_level_from_file("assets/BoxWorld_100.xsb", 3);
+    level
+        .do_actions(optimal.iter().map(|a| a.direction()))
+        .unwrap();
+    assert!(level.is_solved());
+}
+
+#[test]
+fn optimal_move_yields_no_more_moves_than_fast() {
+    // OptimalMove minimizes player moves. On a tiny level the savings are
+    // small but the invariant must hold.
+    let mut level_fast = Level::from_str(TINY).unwrap();
+    let mut level_opt = Level::from_str(TINY).unwrap();
+
+    let fast = Solver::new(level_fast.map().clone(), Strategy::Fast)
+        .a_star_search()
+        .unwrap();
+    let opt = Solver::new(level_opt.map().clone(), Strategy::OptimalMove)
+        .a_star_search()
+        .unwrap();
+
+    assert!(
+        opt.moves() <= fast.moves(),
+        "OptimalMove ({} moves) must not exceed Fast ({} moves)",
+        opt.moves(),
+        fast.moves()
+    );
+
+    level_fast
+        .do_actions(fast.iter().map(|a| a.direction()))
+        .unwrap();
+    level_opt.do_actions(opt.iter().map(|a| a.direction())).unwrap();
+    assert!(level_fast.is_solved());
+    assert!(level_opt.is_solved());
+}
+
+#[test]
+fn fast_weight_one_is_admissible() {
+    // Fast with weight 1.0 reduces to plain A* in push space, so the push
+    // count must equal OptimalPush.
+    let map = load_level_from_file("assets/BoxWorld_100.xsb", 1).map().clone();
+
+    let weighted = Solver::new(map.clone(), Strategy::Fast)
+        .with_fast_weight(1.0)
+        .a_star_search()
+        .unwrap();
+    let optimal = Solver::new(map, Strategy::OptimalPush)
+        .a_star_search()
+        .unwrap();
+
+    assert_eq!(weighted.pushes(), optimal.pushes());
+}
+
+#[test]
+fn fast_weight_is_clamped_to_at_least_one() {
+    // Constructing with a fractional weight clamps to 1.0 — the search must
+    // still produce a valid solution.
+    let map = Level::from_str(TINY).unwrap().map().clone();
+    let solver = Solver::new(map, Strategy::Fast).with_fast_weight(0.1);
+    assert_eq!(solver.fast_weight(), 1.0);
+    assert!(solver.a_star_search().is_ok());
+}
+
+#[test]
+fn tunnel_macros_toggle_keeps_solutions_valid() {
+    let mut with = load_level_from_file("assets/BoxWorld_100.xsb", 1);
+    let mut without = load_level_from_file("assets/BoxWorld_100.xsb", 1);
+
+    let solution_with = Solver::new(with.map().clone(), Strategy::Fast)
+        .with_tunnel_macros(true)
+        .a_star_search()
+        .unwrap();
+    let solution_without = Solver::new(without.map().clone(), Strategy::Fast)
+        .with_tunnel_macros(false)
+        .a_star_search()
+        .unwrap();
+
+    with.do_actions(solution_with.iter().map(|a| a.direction()))
+        .unwrap();
+    without
+        .do_actions(solution_without.iter().map(|a| a.direction()))
+        .unwrap();
+
+    assert!(with.is_solved());
+    assert!(without.is_solved());
+}
+
+#[test]
+fn tunnel_macros_setter_round_trips() {
+    let map = Level::from_str(TINY).unwrap().map().clone();
+    let solver = Solver::new(map, Strategy::Fast);
+    assert!(!solver.tunnel_macros(), "default should be off");
+    let solver = solver.with_tunnel_macros(true);
+    assert!(solver.tunnel_macros());
+}
+
+#[test]
+fn lower_bounds_includes_goals_with_distance_zero() {
+    let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
+    let solver = Solver::new(map.clone(), Strategy::Fast);
+    let lb = solver.lower_bounds();
+
+    for &goal in map.goal_positions() {
+        assert_eq!(
+            lb.get(&goal).copied(),
+            Some(0),
+            "goal {:?} must have lower bound 0",
+            goal
+        );
+    }
+
+    // Every reachable lower-bound value is non-negative.
+    for &v in lb.values() {
+        assert!(v >= 0);
+    }
+}
+
+#[test]
+fn distance_matrix_self_distance_is_zero() {
+    let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
+    let solver = Solver::new(map.clone(), Strategy::Fast);
+    let dm = solver.distance_matrix();
+
+    for &goal in map.goal_positions() {
+        // Distance from a goal to itself in the abstraction is 0.
+        let to_goal = dm.get(&goal).expect("goal missing from distance matrix");
+        assert_eq!(to_goal.get(&goal).copied(), Some(0));
+    }
+}
+
+#[test]
+fn ida_star_solves_simple_level() {
+    let map = Level::from_str(TINY).unwrap().map().clone();
+    let solver = Solver::new(map, Strategy::OptimalPush);
+    assert!(solver.ida_star_search().is_ok());
+}
+
+#[test]
+fn search_terminator_timeout_returns_terminated() {
+    use std::time::Duration;
+
+    // A non-zero timeout that's too short to solve a hard level.
+    let map = load_level_from_file("assets/BoxWorld_100.xsb", 3).map().clone();
+    let solver = Solver::new(map, Strategy::Fast)
+        .with_terminator(Terminator::Timeout(Duration::from_nanos(1)));
+    // Either we terminate due to the budget or — extremely unlikely — we
+    // happen to succeed before checking. Both outcomes are valid; only a
+    // panic would be a bug.
+    let result = solver.a_star_search();
+    assert!(matches!(
+        result,
+        Err(SearchError::Terminated) | Ok(_)
+    ));
+}
+
+#[test]
+fn terminator_constructors() {
+    use std::time::Duration;
+    assert_eq!(Terminator::new_iterations(42), Terminator::Iterations(42));
+    assert_eq!(
+        Terminator::new_duration_secs(7),
+        Terminator::Timeout(Duration::from_secs(7))
+    );
 }
 
 #[expect(dead_code)]

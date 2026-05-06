@@ -25,11 +25,25 @@ impl PartialOrd for Node {
     }
 }
 
-/// Finds a path from one position to another on the map.
+/// Hard cap on A* expansions inside [`find_path`].
 ///
-/// This function uses the A* algorithm to find the shortest path from the
-/// starting position to the target position, based on the provided `can_move`
-/// function.
+/// The search is bounded only by `can_move`. If the predicate doesn't clip
+/// the grid (returning `true` outside the intended search region), A* would
+/// otherwise wander the infinite 2D plane forever. This cap converts that
+/// pathological case into a finite-time `None`. For realistic Sokoban maps
+/// (≤ ~64×64) the cap is many orders of magnitude larger than needed.
+pub const FIND_PATH_MAX_EXPANSIONS: usize = 1_000_000;
+
+/// Finds a shortest path from `from` to `to` using A* with Manhattan distance.
+///
+/// `can_move` is the only thing that bounds the search region. **The
+/// predicate must return `false` outside the intended grid**, otherwise the
+/// search would explore the unbounded 2D plane. As a safety net the
+/// implementation hard-caps expansions at [`FIND_PATH_MAX_EXPANSIONS`] and
+/// returns `None` on overflow rather than hanging.
+///
+/// In normal use against a [`crate::Map`], pass `|p| map.can_move(p)` (which
+/// already checks bounds) and the cap will never fire.
 pub fn find_path(
     from: IVector2,
     to: IVector2,
@@ -45,9 +59,16 @@ pub fn find_path(
     });
     cost.insert(from, 0);
 
+    let mut expansions = 0usize;
     while let Some(node) = open_set.pop() {
         if node.position == to {
             return Some(construct_path(from, to, came_from));
+        }
+
+        expansions += 1;
+        if expansions >= FIND_PATH_MAX_EXPANSIONS {
+            // Likely an unbounded `can_move`; bail rather than hang.
+            return None;
         }
 
         for direction in Direction::iter() {

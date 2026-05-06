@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    deadlock::introduces_freeze_deadlock,
+    deadlock::{introduces_2x2_deadlock, introduces_freeze_deadlock},
     direction::Direction,
     path_finding::reachable_area_with_distances,
     solver::{Solver, Strategy},
@@ -131,6 +131,13 @@ impl Node {
                 new_box_positions.remove(box_position);
                 new_box_positions.insert(new_box_position);
 
+                // Cheap O(1) closed-diagonal (2×2) deadlock check. Catches
+                // some clusters the recursive freeze check misses when its
+                // recursion short-circuits at a wall-blocked box.
+                if introduces_2x2_deadlock(solver.map(), new_box_position, &new_box_positions) {
+                    continue;
+                }
+
                 // Skip pushes that freeze any off-goal box. Note: the pushed
                 // box being on a goal is *not* enough — we must check the whole
                 // frozen connected component (see `introduces_freeze_deadlock`).
@@ -150,6 +157,10 @@ impl Node {
             }
         }
 
+        // Sort low-priority-first. For IDA* this lets the depth-first search
+        // try the most promising branch first and short-circuit on `Found`;
+        // for A* it improves cache locality of recently-pushed heap entries.
+        successors.sort_by_key(|n| n.priority);
         successors
     }
 }
