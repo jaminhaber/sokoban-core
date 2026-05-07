@@ -18,9 +18,6 @@ pub mod run_length;
 pub mod solver;
 pub mod tiles;
 
-mod node;
-mod state;
-
 pub use action::*;
 pub use actions::*;
 pub use box_set::*;
@@ -31,3 +28,23 @@ pub use level::*;
 pub use map::*;
 pub use math::*;
 pub use tiles::*;
+
+/// Convenience re-exports for `use sokoban_core::prelude::*;`.
+///
+/// Brings the types you almost always need — `Map`, `Level`, `Action`,
+/// `IVector2`, etc. — into scope, plus the [`solver::Solver`] entry point
+/// and its associated configuration types.
+pub mod prelude {
+    pub use crate::{
+        action::Action,
+        actions::Actions,
+        collection::Collection,
+        direction::Direction,
+        error::{ActionError, ParseActionError, ParseLevelError, ParseMapError, SearchError},
+        level::Level,
+        map::Map,
+        math::IVector2,
+        solver::{Solver, Strategy, Terminator},
+        tiles::Tiles,
+    };
+}

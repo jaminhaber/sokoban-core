@@ -8,10 +8,11 @@ use crate::{
     deadlock::{introduces_2x2_deadlock, introduces_corral_deadlock, introduces_freeze_deadlock},
     direction::Direction,
     path_finding::reachable_area_with_distances,
-    solver::{Solver, Strategy},
-    state::State,
     Tiles,
 };
+
+use super::state::State;
+use super::{Solver, Strategy};
 
 /// Inline storage for successor lists. Most states have ≤8 legal successors;
 /// using `SmallVec` avoids the heap allocation in the inner search loop and

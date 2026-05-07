@@ -10,8 +10,7 @@ use std::{
 
 use crate::{
     actions::Actions, box_set::BoxSet, deadlock::*, direction::Direction, error::ParseMapError,
-    level::Level, math::IVector2, path_finding::*, run_length::rle_decode, state::State,
-    tiles::Tiles,
+    level::Level, math::IVector2, path_finding::*, run_length::rle_decode, tiles::Tiles,
 };
 
 /// A grid-based map.
@@ -636,14 +635,6 @@ impl fmt::Display for Map {
     }
 }
 
-impl From<Map> for State {
-    fn from(map: Map) -> Self {
-        Self {
-            player_position: map.player_position,
-            box_positions: map.box_positions,
-        }
-    }
-}
 
 fn calculate_dimensions_and_player_position(actions: &Actions) -> (IVector2, IVector2) {
     let mut min_position = IVector2::zeros();

@@ -5,9 +5,10 @@ use crate::{
     matching::min_cost_matching,
     math::IVector2,
     path_finding::{normalized_area, reachable_area},
-    solver::Solver,
     Map, Tiles,
 };
+
+use super::Solver;
 
 /// A Sokoban state: where the player and every box currently sit.
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -101,6 +102,15 @@ impl Hash for State {
         self.player_position.hash(state);
         // BoxSet hashes deterministically (raw bit-array order is fixed).
         self.box_positions.hash(state);
+    }
+}
+
+impl From<Map> for State {
+    fn from(map: Map) -> Self {
+        Self {
+            player_position: map.player_position(),
+            box_positions: map.box_positions().clone(),
+        }
     }
 }
 
