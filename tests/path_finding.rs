@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use rustc_hash::FxHashSet;
 use sokoban_core::path_finding::*;
 use sokoban_core::IVector2;
 
@@ -58,7 +59,10 @@ fn test_box_move_waypoints() {
 #[test]
 fn test_pushable_boxes() {
     let map = load_level_from_file("assets/Microban_155.xsb", 3).into();
-    assert_eq!(pushable_boxes(&map), HashSet::from([IVector2::new(6, 3)]));
+    assert_eq!(
+        pushable_boxes(&map),
+        FxHashSet::from_iter([IVector2::new(6, 3)])
+    );
 }
 
 #[test]
@@ -99,7 +103,7 @@ fn reachable_area_with_distances_returns_bfs_distances() {
 #[test]
 fn normalized_area_picks_top_left_by_y_then_x() {
     // Three cells: the order should be (1, 0) — smallest y, then smallest x.
-    let area: HashSet<IVector2> = [
+    let area: FxHashSet<IVector2> = [
         IVector2::new(2, 5),
         IVector2::new(1, 0),
         IVector2::new(3, 0),
@@ -111,7 +115,7 @@ fn normalized_area_picks_top_left_by_y_then_x() {
 
 #[test]
 fn normalized_area_of_empty_set_is_none() {
-    let empty: HashSet<IVector2> = HashSet::new();
+    let empty: FxHashSet<IVector2> = FxHashSet::default();
     assert_eq!(normalized_area(&empty), None);
 }
 

@@ -22,6 +22,12 @@ bench = false
 [dependencies]
 bitflags = "2.9"
 itertools = "0.14"
+# FxHash is ~3× faster than the std SipHasher for the small fixed-size keys
+# used in the search hot path (StateKey carries a precomputed u64 already).
+rustc-hash = "2.1"
+# Inline storage for `Node::successors` — typical states have <16 successors,
+# so we avoid heap allocations on the inner loop.
+smallvec = "1.15"
 thiserror = "2.0"
 
 [dev-dependencies]

@@ -226,6 +226,54 @@ fn tunnel_macros_setter_round_trips() {
 }
 
 #[test]
+fn corral_pruning_setter_round_trips() {
+    let map = Level::from_str(TINY).unwrap().map().clone();
+    let solver = Solver::new(map, Strategy::Fast);
+    assert!(!solver.corral_pruning(), "default should be off");
+    let solver = solver.with_corral_pruning(true);
+    assert!(solver.corral_pruning());
+}
+
+#[test]
+fn greedy_strategy_solves_simple_level() {
+    let mut level = Level::from_str(TINY).unwrap();
+    let solution = Solver::new(level.map().clone(), Strategy::Greedy)
+        .a_star_search()
+        .unwrap();
+    level
+        .do_actions(solution.iter().map(|a| a.direction()))
+        .unwrap();
+    assert!(level.is_solved());
+}
+
+#[test]
+fn greedy_strategy_solves_real_level() {
+    let mut level = load_level_from_file("assets/Microban_155.xsb", 1);
+    let solution = Solver::new(level.map().clone(), Strategy::Greedy)
+        .a_star_search()
+        .unwrap();
+    level
+        .do_actions(solution.iter().map(|a| a.direction()))
+        .unwrap();
+    assert!(level.is_solved());
+}
+
+#[test]
+fn corral_pruning_keeps_solutions_valid() {
+    // Toggling corral pruning should not break correctness on a level
+    // where the freeze + 2×2 checks are already sufficient.
+    let mut level = load_level_from_file("assets/BoxWorld_100.xsb", 1);
+    let solution = Solver::new(level.map().clone(), Strategy::Fast)
+        .with_corral_pruning(true)
+        .a_star_search()
+        .unwrap();
+    level
+        .do_actions(solution.iter().map(|a| a.direction()))
+        .unwrap();
+    assert!(level.is_solved());
+}
+
+#[test]
 fn lower_bounds_includes_goals_with_distance_zero() {
     let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
     let solver = Solver::new(map.clone(), Strategy::Fast);

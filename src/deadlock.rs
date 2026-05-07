@@ -2,7 +2,10 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use crate::{box_set::BoxSet, direction::Direction, map::Map, math::IVector2, tiles::Tiles};
+use crate::{
+    box_set::BoxSet, direction::Direction, map::Map, math::IVector2,
+    path_finding::reachable_area, tiles::Tiles,
+};
 
 /// Checks if the given box position is a static deadlock.
 ///
@@ -46,6 +49,74 @@ pub fn is_static_deadlock(
         }
     }
     true
+}
+
+/// Returns `true` if pushing a box to `box_position` traps it in a corral
+/// the player can no longer change.
+///
+/// A *corral* is a maximal connected region of non-wall cells that lies
+/// outside the player's reachable area. After a push, the freshly pushed
+/// box sits inside such a region (its cell is non-wall and the box itself
+/// blocks the player from standing there). If every box on the corral's
+/// boundary is unpushable by the player from a reachable cell, the corral
+/// is *frozen* — its configuration is permanent. A frozen corral with an
+/// off-goal box or an unfilled goal is a deadlock.
+///
+/// This is a sound but conservative form of PI-corral pruning. It never
+/// false-positives — if the corral can still be changed by some push, the
+/// check returns `false`. The full Junghanns & Schaeffer rule additionally
+/// proves a corral unsolvable by enumerating inward pushes; that extension
+/// is left for a later phase.
+pub fn introduces_corral_deadlock(
+    map: &Map,
+    box_position: IVector2,
+    box_positions: &BoxSet,
+    new_player_position: IVector2,
+) -> bool {
+    // 1) Player's reachable area in the post-push state. Boxes block.
+    let reachable = reachable_area(new_player_position, |p| {
+        map.in_bounds(p) && !map[p].intersects(Tiles::Wall) && !box_positions.contains(&p)
+    });
+
+    // 2) The corral containing the just-pushed box: connected non-wall cells
+    //    outside `reachable`. The box's own cell is non-wall, so it belongs
+    //    to the corral.
+    let corral = reachable_area(box_position, |p| {
+        map.in_bounds(p) && !map[p].intersects(Tiles::Wall) && !reachable.contains(&p)
+    });
+
+    // 3) If any box in the corral is currently pushable by the player from
+    //    a reachable cell, the corral isn't frozen — bail.
+    for &cell in &corral {
+        if !box_positions.contains(&cell) {
+            continue;
+        }
+        for dir in Direction::iter() {
+            let d: IVector2 = dir.into();
+            let dest = cell + d;
+            let player_at = cell - d;
+            if !map.in_bounds(dest) || map[dest].intersects(Tiles::Wall) {
+                continue;
+            }
+            if box_positions.contains(&dest) {
+                continue;
+            }
+            if reachable.contains(&player_at) {
+                return false;
+            }
+        }
+    }
+
+    // 4) Frozen corral. Deadlock iff any box in it is off-goal or any goal
+    //    in it is unfilled.
+    let off_goal_box = corral
+        .iter()
+        .any(|p| box_positions.contains(p) && !map[*p].intersects(Tiles::Goal));
+    let unfilled_goal = corral
+        .iter()
+        .any(|p| map[*p].intersects(Tiles::Goal) && !box_positions.contains(p));
+
+    off_goal_box || unfilled_goal
 }
 
 /// Returns `true` iff pushing a box to `box_position` creates a freeze deadlock.
@@ -450,5 +521,58 @@ mod tests {
         let map = Map::from_str(PLAYGROUND).unwrap();
         let boxes = BoxSet::from_iter(map.dimensions().x, [IVector2::new(1, 1)]);
         assert!(introduces_2x2_deadlock(&map, IVector2::new(1, 1), &boxes));
+    }
+
+    #[test]
+    fn introduces_corral_deadlock_flags_off_goal_corner() {
+        // After pushing left, the box lands in the bottom-left corner. The
+        // corral is the single cell {(1,1)}, frozen, off-goal — deadlock.
+        let xsb = "######\n# $@.#\n######\n";
+        let map = Map::from_str(xsb).unwrap();
+        let pushed_to = IVector2::new(1, 1);
+        let new_player = IVector2::new(2, 1);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
+        assert!(introduces_corral_deadlock(&map, pushed_to, &post_push, new_player));
+    }
+
+    #[test]
+    fn introduces_corral_deadlock_passes_when_box_still_pushable() {
+        // The just-pushed box is in an open corridor and has free cells in
+        // multiple directions; the corral isn't frozen.
+        let xsb = "########\n#@ $  .#\n########\n";
+        let map = Map::from_str(xsb).unwrap();
+        // Simulate pushing right: box (3,1) → (4,1); player ends at (3,1).
+        let pushed_to = IVector2::new(4, 1);
+        let new_player = IVector2::new(3, 1);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
+        assert!(!introduces_corral_deadlock(
+            &map,
+            pushed_to,
+            &post_push,
+            new_player
+        ));
+    }
+
+    #[test]
+    fn introduces_corral_deadlock_allows_solved_frozen_pocket() {
+        // The box ends up on a goal in a single-cell corner. The corral is
+        // frozen but fully solved — not a deadlock.
+        let xsb = "######\n# $@ #\n#.   #\n######\n";
+        let map = Map::from_str(xsb).unwrap();
+        // Hand-simulate: push box (2,2) down, then left. After the second
+        // push the box sits at (1,1) — the goal. Player ends at (2,1).
+        let pushed_to = IVector2::new(1, 1);
+        let new_player = IVector2::new(2, 1);
+        let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
+
+        // Sanity: pushed-to is the goal cell.
+        assert!(map[pushed_to].intersects(Tiles::Goal));
+
+        assert!(!introduces_corral_deadlock(
+            &map,
+            pushed_to,
+            &post_push,
+            new_player
+        ));
     }
 }

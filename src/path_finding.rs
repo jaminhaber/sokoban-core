@@ -2,8 +2,10 @@
 
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
+    collections::{BinaryHeap, HashMap, VecDeque},
 };
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{direction::Direction, map::Map, math::IVector2, Tiles};
 
@@ -50,8 +52,8 @@ pub fn find_path(
     can_move: impl Fn(IVector2) -> bool,
 ) -> Option<Vec<IVector2>> {
     let mut open_set = BinaryHeap::new();
-    let mut came_from = HashMap::new();
-    let mut cost = HashMap::new();
+    let mut came_from: FxHashMap<IVector2, IVector2> = FxHashMap::default();
+    let mut cost: FxHashMap<IVector2, i32> = FxHashMap::default();
 
     open_set.push(Node {
         position: from,
@@ -96,7 +98,7 @@ pub fn find_path(
 fn construct_path(
     from: IVector2,
     to: IVector2,
-    came_from: HashMap<IVector2, IVector2>,
+    came_from: FxHashMap<IVector2, IVector2>,
 ) -> Vec<IVector2> {
     let mut path = Vec::new();
     let mut current = to;
@@ -261,10 +263,10 @@ pub fn construct_player_path(
 }
 
 /// Returns a set of positions of the boxes that can be pushed by the player.
-pub fn pushable_boxes(map: &Map) -> HashSet<IVector2> {
+pub fn pushable_boxes(map: &Map) -> FxHashSet<IVector2> {
     let player_reachable_area =
         reachable_area(map.player_position(), |position| map.can_move(position));
-    let mut pushable_boxes = HashSet::new();
+    let mut pushable_boxes: FxHashSet<IVector2> = FxHashSet::default();
     for box_position in map.box_positions() {
         // Check if the player can push the box from any direction
         for direction in Direction::iter() {
@@ -287,8 +289,10 @@ pub fn pushable_boxes(map: &Map) -> HashSet<IVector2> {
 pub fn reachable_area(
     position: IVector2,
     can_move: impl Fn(IVector2) -> bool,
-) -> HashSet<IVector2> {
-    let mut reachable_area = HashSet::new();
+) -> FxHashSet<IVector2> {
+    // Sokoban maps usually fit in a few dozen cells; pre-sizing avoids the
+    // grow-and-rehash chain that dominates BFS cost on small grids.
+    let mut reachable_area: FxHashSet<IVector2> = FxHashSet::with_capacity_and_hasher(64, Default::default());
     let mut deque = VecDeque::<IVector2>::new();
     deque.push_back(position);
 
@@ -323,8 +327,9 @@ pub fn reachable_area(
 pub fn reachable_area_with_distances(
     position: IVector2,
     can_move: impl Fn(IVector2) -> bool,
-) -> HashMap<IVector2, i32> {
-    let mut dist = HashMap::<IVector2, i32>::new();
+) -> FxHashMap<IVector2, i32> {
+    let mut dist: FxHashMap<IVector2, i32> =
+        FxHashMap::with_capacity_and_hasher(64, Default::default());
     let mut deque = VecDeque::<IVector2>::new();
     dist.insert(position, 0);
     deque.push_back(position);
@@ -348,7 +353,7 @@ pub fn reachable_area_with_distances(
 }
 
 /// Returns the top-left position.
-pub fn normalized_area(area: &HashSet<IVector2>) -> Option<IVector2> {
+pub fn normalized_area(area: &FxHashSet<IVector2>) -> Option<IVector2> {
     area.iter()
         .min_by(|a, b| a.y.cmp(&b.y).then_with(|| a.x.cmp(&b.x)))
         .copied()

@@ -2,14 +2,22 @@
 
 use std::cmp::Ordering;
 
+use smallvec::SmallVec;
+
 use crate::{
-    deadlock::{introduces_2x2_deadlock, introduces_freeze_deadlock},
+    deadlock::{introduces_2x2_deadlock, introduces_corral_deadlock, introduces_freeze_deadlock},
     direction::Direction,
     path_finding::reachable_area_with_distances,
     solver::{Solver, Strategy},
     state::State,
     Tiles,
 };
+
+/// Inline storage for successor lists. Most states have ≤8 legal successors;
+/// using `SmallVec` avoids the heap allocation in the inner search loop and
+/// only spills to the heap for unusually wide states. Each `Node` is ~540 B
+/// so 8 inline = ~4.3 KB on the stack — safe even for IDA*'s recursive calls.
+type Successors = SmallVec<[Node; 8]>;
 
 /// A node in the search frontier.
 ///
@@ -53,6 +61,7 @@ impl Node {
                     let w = solver.fast_weight();
                     pushes.saturating_add(((h as f32) * w).ceil() as i32)
                 }
+                Strategy::Greedy => h,
                 Strategy::OptimalPush => pushes.saturating_add(h),
                 Strategy::OptimalMove => moves.saturating_add(h),
             }
@@ -78,8 +87,8 @@ impl Node {
     /// 4. Resulting configuration does not introduce a freeze deadlock.
     ///
     /// Tunnel macros are applied as forced sequences of pushes through corridors.
-    pub fn successors(&self, solver: &Solver) -> Vec<Node> {
-        let mut successors = Vec::new();
+    pub fn successors(&self, solver: &Solver) -> Successors {
+        let mut successors: Successors = SmallVec::new();
 
         // BFS once per expanded node for move-opt edge costs and reachability.
         let dist = reachable_area_with_distances(self.state.player_position, |p| {
@@ -142,6 +151,21 @@ impl Node {
                 // box being on a goal is *not* enough — we must check the whole
                 // frozen connected component (see `introduces_freeze_deadlock`).
                 if introduces_freeze_deadlock(solver.map(), new_box_position, &new_box_positions) {
+                    continue;
+                }
+
+                // Conservative PI-corral check, opt-in via `with_corral_pruning`.
+                // Costs two extra BFSes per push, so it's off by default and
+                // only worth turning on for levels where freeze + 2×2 alone
+                // can't keep the search bounded.
+                if solver.corral_pruning()
+                    && introduces_corral_deadlock(
+                        solver.map(),
+                        new_box_position,
+                        &new_box_positions,
+                        new_player_position,
+                    )
+                {
                     continue;
                 }
 

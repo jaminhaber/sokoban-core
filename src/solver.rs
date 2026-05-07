@@ -9,9 +9,10 @@ use crate::{
     state::{State, StateKey},
     Action, Actions, Map, SearchError, Tiles,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     cell::{OnceCell, RefCell},
-    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
+    collections::{BinaryHeap, VecDeque},
     time::Duration,
 };
 
@@ -28,6 +29,12 @@ pub enum Strategy {
     /// Implemented as **weighted A*** in push space using a strong admissible heuristic.
     #[default]
     Fast,
+
+    /// Greedy best-first search — picks states purely by heuristic, ignoring
+    /// the path cost to reach them. Often dramatically faster than `Fast`,
+    /// but solutions can be much longer than optimal. Use when you only
+    /// need *some* solution as fast as possible.
+    Greedy,
 
     /// Find a push-optimal solution (minimum number of pushes).
     OptimalPush,
@@ -52,14 +59,20 @@ pub struct Solver {
     // Whether to compress forced corridor pushes using tunnel macros.
     tunnel_macros: bool,
 
+    // Whether to run the conservative PI-corral deadlock check on each push.
+    // Off by default: the per-push cost (two BFSes) outweighs the pruning win
+    // on small/easy levels. Enable on hard levels where freeze and 2×2 alone
+    // are not enough to keep the search bounded.
+    corral_pruning: bool,
+
     // lower_bounds[pos] = minimum pushes from pos to any goal in the abstraction
-    lower_bounds: OnceCell<HashMap<IVector2, i32>>,
+    lower_bounds: OnceCell<FxHashMap<IVector2, i32>>,
 
     // distance_matrix[pos][goal] = minimum pushes from pos to that goal in the abstraction
-    distance_matrix: OnceCell<HashMap<IVector2, HashMap<IVector2, i32>>>,
+    distance_matrix: OnceCell<FxHashMap<IVector2, FxHashMap<IVector2, i32>>>,
 
     // tunnel macros keyed by (box_position, push_direction)
-    tunnels: OnceCell<HashSet<(IVector2, Direction)>>,
+    tunnels: OnceCell<FxHashSet<(IVector2, Direction)>>,
 
     // Heuristic memoization keyed on box configuration. The matching heuristic
     // depends only on box positions (player position is irrelevant), so the
@@ -68,7 +81,7 @@ pub struct Solver {
     // along different paths; this avoids paying the O(n·2ⁿ) matching cost on
     // every revisit. Wrapped in `RefCell` because `State::heuristic` is called
     // through `&Solver`.
-    heuristic_cache: RefCell<HashMap<BoxSet, i32>>,
+    heuristic_cache: RefCell<FxHashMap<BoxSet, i32>>,
 
     terminator: Terminator,
 }
@@ -143,12 +156,33 @@ impl Solver {
             strategy,
             fast_weight: 2.0,
             tunnel_macros: false,
+            corral_pruning: false,
             lower_bounds: OnceCell::new(),
             distance_matrix: OnceCell::new(),
             tunnels: OnceCell::new(),
-            heuristic_cache: RefCell::new(HashMap::new()),
+            heuristic_cache: RefCell::new(FxHashMap::default()),
             terminator: Terminator::None,
         }
+    }
+
+    /// Enables or disables the conservative PI-corral deadlock check.
+    ///
+    /// When enabled, after each push the solver checks whether the just-pushed
+    /// box ended up in a connected region the player can no longer enter and
+    /// can no longer change. Such *frozen corrals* are deadlocks if they
+    /// aren't fully solved.
+    ///
+    /// Off by default. The check costs two extra BFSes per push, which on
+    /// easy levels outweighs the pruning benefit. Enable it for hard levels
+    /// where the search would otherwise blow up.
+    pub fn with_corral_pruning(mut self, enabled: bool) -> Self {
+        self.corral_pruning = enabled;
+        self
+    }
+
+    /// Returns whether corral pruning is enabled.
+    pub fn corral_pruning(&self) -> bool {
+        self.corral_pruning
     }
 
     /// Returns the cached heuristic for `boxes`, if any.
@@ -251,8 +285,8 @@ impl Solver {
 
         // Best known cost-to-come g(key). The key carries the full canonical
         // state, so collisions are impossible.
-        let mut best_g: HashMap<StateKey, i32> = HashMap::new();
-        let mut parent: HashMap<StateKey, StateKey> = HashMap::new();
+        let mut best_g: FxHashMap<StateKey, i32> = FxHashMap::default();
+        let mut parent: FxHashMap<StateKey, StateKey> = FxHashMap::default();
 
         let start: State = self.map.clone().into();
         let start_node = Node::new(start, 0, 0, self);
@@ -304,6 +338,10 @@ impl Solver {
         match self.strategy {
             Strategy::OptimalMove => node.moves,
             Strategy::OptimalPush | Strategy::Fast => node.pushes,
+            // Greedy ignores g; using a constant turns the reopen check into
+            // visited-once semantics (g_succ = 0 is never strictly less than
+            // the recorded 0, so a state is processed only the first time).
+            Strategy::Greedy => 0,
         }
     }
     /// Solves the Sokoban level using **IDA\*** (Iterative Deepening A*).
@@ -333,7 +371,7 @@ impl Solver {
         let mut terminator = TerminatorInner::new(self.terminator);
 
         loop {
-            let mut visited: HashSet<StateKey> = HashSet::new();
+            let mut visited: FxHashSet<StateKey> = FxHashSet::default();
 
             match self.ida_dfs(&start, 0, 0, threshold, &mut visited, &mut terminator) {
                 IdaDfsResult::Found => return Ok(()),
@@ -359,7 +397,7 @@ impl Solver {
         pushes: i32,
         moves: i32,
         threshold: i32,
-        visited: &mut HashSet<StateKey>,
+        visited: &mut FxHashSet<StateKey>,
         terminator: &mut TerminatorInner,
     ) -> IdaDfsResult {
         if terminator.tick() {
@@ -374,6 +412,10 @@ impl Solver {
         let g = match self.strategy {
             Strategy::OptimalMove => moves,
             Strategy::OptimalPush | Strategy::Fast => pushes,
+            // Greedy in IDA* is unusual but well-defined: f = h, so
+            // thresholds iterate on heuristic values. Convergence is poor
+            // — prefer `a_star_search` for greedy.
+            Strategy::Greedy => 0,
         };
         let f = g.saturating_add(h);
 
@@ -423,19 +465,19 @@ impl Solver {
     }
 
     /// Returns lower bounds (dead-square / min-to-any-goal) computed from push distances.
-    pub fn lower_bounds(&self) -> &HashMap<IVector2, i32> {
+    pub fn lower_bounds(&self) -> &FxHashMap<IVector2, i32> {
         self.lower_bounds
             .get_or_init(|| self.precompute_push_distances().0)
     }
 
     /// Returns the push distance matrix used by the matching heuristic.
-    pub fn distance_matrix(&self) -> &HashMap<IVector2, HashMap<IVector2, i32>> {
+    pub fn distance_matrix(&self) -> &FxHashMap<IVector2, FxHashMap<IVector2, i32>> {
         self.distance_matrix
             .get_or_init(|| self.precompute_push_distances().1)
     }
 
     /// Returns tunnel macro table.
-    pub fn tunnels(&self) -> &HashSet<(IVector2, Direction)> {
+    pub fn tunnels(&self) -> &FxHashSet<(IVector2, Direction)> {
         self.tunnels.get_or_init(|| self.calculate_tunnels())
     }
 
@@ -456,20 +498,21 @@ impl Solver {
     fn precompute_push_distances(
         &self,
     ) -> (
-        HashMap<IVector2, i32>,
-        HashMap<IVector2, HashMap<IVector2, i32>>,
+        FxHashMap<IVector2, i32>,
+        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
     ) {
         let is_free =
             |p: IVector2| -> bool { self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall) };
 
-        let mut distance_matrix: HashMap<IVector2, HashMap<IVector2, i32>> = HashMap::new();
+        let mut distance_matrix: FxHashMap<IVector2, FxHashMap<IVector2, i32>> =
+            FxHashMap::default();
 
         for &goal in self.map.goal_positions().iter() {
             if !is_free(goal) {
                 continue;
             }
 
-            let mut dist_to_goal: HashMap<IVector2, i32> = HashMap::new();
+            let mut dist_to_goal: FxHashMap<IVector2, i32> = FxHashMap::default();
             let mut q = VecDeque::new();
 
             dist_to_goal.insert(goal, 0);
@@ -498,13 +541,13 @@ impl Solver {
             for (pos, d) in dist_to_goal {
                 distance_matrix
                     .entry(pos)
-                    .or_insert_with(HashMap::new)
+                    .or_insert_with(FxHashMap::default)
                     .insert(goal, d);
             }
         }
 
         // lower_bounds[pos] = min distance to any goal
-        let mut lower_bounds: HashMap<IVector2, i32> = HashMap::new();
+        let mut lower_bounds: FxHashMap<IVector2, i32> = FxHashMap::default();
         for (pos, gm) in &distance_matrix {
             if let Some(best) = gm.values().min().copied() {
                 lower_bounds.insert(*pos, best);
@@ -519,8 +562,8 @@ impl Solver {
     /// This is a conservative detector keyed by `(box_pos, dir)`:
     /// if a box at `box_pos` is pushed in `dir` and the corridor walls force
     /// the continuation, we mark that step as a tunnel macro.
-    fn calculate_tunnels(&self) -> HashSet<(IVector2, Direction)> {
-        let mut tunnels = HashSet::new();
+    fn calculate_tunnels(&self) -> FxHashSet<(IVector2, Direction)> {
+        let mut tunnels = FxHashSet::default();
 
         let is_free =
             |p: IVector2| -> bool { self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall) };
@@ -587,7 +630,7 @@ impl Solver {
     fn construct_actions(
         &self,
         goal_key: &StateKey,
-        parent: &HashMap<StateKey, StateKey>,
+        parent: &FxHashMap<StateKey, StateKey>,
     ) -> Actions {
         // 1) Build the chain of canonical states from start → goal.
         let mut chain: Vec<&StateKey> = vec![goal_key];

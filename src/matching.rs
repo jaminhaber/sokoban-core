@@ -5,23 +5,27 @@
 //! based on subset dynamic programming, which is typically faster and easier to verify
 //! than a handwritten Hungarian algorithm for Sokoban-sized instances.
 
-/// Computes a minimum-cost perfect matching for a square cost matrix.
+/// Computes a minimum-cost perfect matching for a square `n × n` cost matrix
+/// stored row-major in a flat slice.
 ///
-/// `cost[i][j]` is the cost of assigning box `i` to goal `j`.
-/// Costs of `i32::MAX` are treated as "impossible edges".
+/// `cost[i * n + j]` is the cost of assigning box `i` to goal `j`. Costs of
+/// `i32::MAX` are treated as "impossible edges". The flat representation
+/// avoids the `n + 1` allocations of a `Vec<Vec<i32>>` per call — meaningful
+/// because the heuristic builds and discards a fresh cost matrix on every
+/// cache miss.
 ///
 /// Returns `None` when no perfect matching exists.
 ///
 /// # Complexity
 ///
-/// `O(n * 2^n)` time and `O(2^n)` memory, where `n` is the number of boxes/goals.
-/// For Sokoban levels (usually `n <= 20`) this is often competitive and very robust.
-pub fn min_cost_matching(cost: &[Vec<i32>]) -> Option<(i32, Vec<usize>)> {
-    let n = cost.len();
+/// `O(n * 2^n)` time and `O(2^n)` memory, where `n` is the number of
+/// boxes/goals. For Sokoban levels (usually `n <= 20`) this is competitive
+/// and very robust.
+pub fn min_cost_matching(cost: &[i32], n: usize) -> Option<(i32, Vec<usize>)> {
     if n == 0 {
         return Some((0, Vec::new()));
     }
-    if cost.iter().any(|row| row.len() != n) {
+    if cost.len() != n * n {
         return None;
     }
     if n > 22 {
@@ -50,7 +54,7 @@ pub fn min_cost_matching(cost: &[Vec<i32>]) -> Option<(i32, Vec<usize>)> {
             if (mask & (1 << g)) != 0 {
                 continue;
             }
-            let c = cost[i][g];
+            let c = cost[i * n + g];
             if c == i32::MAX {
                 continue;
             }

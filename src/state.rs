@@ -63,18 +63,20 @@ impl State {
         }
 
         let dm = solver.distance_matrix();
+        let n = boxes.len();
 
-        let cost_matrix: Vec<Vec<i32>> = boxes
-            .iter()
-            .map(|b| {
-                goals
-                    .iter()
-                    .map(|g| dm.get(b).and_then(|m| m.get(g).copied()).unwrap_or(i32::MAX))
-                    .collect()
-            })
-            .collect();
+        // Flat row-major cost matrix — one allocation instead of `n + 1`.
+        let mut cost = vec![0i32; n * n];
+        for (i, b) in boxes.iter().enumerate() {
+            let row = dm.get(b);
+            for (j, g) in goals.iter().enumerate() {
+                cost[i * n + j] = row
+                    .and_then(|m| m.get(g).copied())
+                    .unwrap_or(i32::MAX);
+            }
+        }
 
-        match min_cost_matching(&cost_matrix) {
+        match min_cost_matching(&cost, n) {
             Some((c, _)) => c,
             None => i32::MAX,
         }
@@ -141,6 +143,7 @@ impl StateKey {
 }
 
 impl PartialEq for StateKey {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         // Cheap reject on hash mismatch, full check on hit.
         self.hash == other.hash && self.state == other.state
@@ -150,6 +153,7 @@ impl PartialEq for StateKey {
 impl Eq for StateKey {}
 
 impl Hash for StateKey {
+    #[inline]
     fn hash<H: Hasher>(&self, hasher: &mut H) {
         self.hash.hash(hasher);
     }

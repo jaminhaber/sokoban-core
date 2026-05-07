@@ -59,6 +59,7 @@ impl BoxSet {
     /// Inserts a position into the set.
     ///
     /// Returns `true` if the position was newly inserted.
+    #[inline]
     pub fn insert(&mut self, position: IVector2) -> bool {
         let index = self.position_to_index(position);
         debug_assert!(index < MAX_POSITIONS, "Position out of bounds");
@@ -79,6 +80,7 @@ impl BoxSet {
     /// Removes a position from the set.
     ///
     /// Returns `true` if the position was present.
+    #[inline]
     pub fn remove(&mut self, position: IVector2) -> bool {
         let index = self.position_to_index(position);
         debug_assert!(index < MAX_POSITIONS, "Position out of bounds");
@@ -147,6 +149,7 @@ impl BoxSet {
 }
 
 impl Hash for BoxSet {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.width.hash(state);
         // hash all words; deterministic
@@ -167,6 +170,7 @@ pub struct BoxSetIter<'a> {
 impl<'a> Iterator for BoxSetIter<'a> {
     type Item = IVector2;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if self.word_index >= NUM_U64S {
