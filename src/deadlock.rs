@@ -3,13 +3,13 @@
 //!
 //! # Module layout
 //!
-//! - [`freeze`]: the recursive freeze rule. A box is frozen iff both axes
-//!   are blocked by walls or other frozen boxes; a frozen group with any
+//! - `freeze`: the recursive freeze rule. A box is frozen iff both axes are
+//!   blocked by walls or other frozen boxes; a frozen group with any
 //!   off-goal member is a deadlock.
-//! - [`static_analysis`]: properties computed once from the map alone —
+//! - `static_analysis`: properties computed once from the map alone —
 //!   corner / groove dead squares, useless dead-end floors, fully-enclosed
 //!   box clusters.
-//! - [`patterns`]: per-push pattern checks — closed 2×2 blocks and the
+//! - `patterns`: per-push pattern checks — closed 2×2 blocks and the
 //!   conservative PI-corral check. These run after every candidate push to
 //!   prune branches the freeze recursion would miss.
 

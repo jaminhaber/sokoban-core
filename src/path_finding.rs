@@ -2,13 +2,13 @@
 //!
 //! # Module layout
 //!
-//! - [`astar`]: grid A* with a Manhattan heuristic. The general-purpose
+//! - `astar`: grid A* with a Manhattan heuristic. The general-purpose
 //!   shortest-path primitive, plus the `player_move_path` convenience for
 //!   walking the player to a target cell on a [`crate::Map`].
-//! - [`reachability`]: BFS reachability — `reachable_area`,
+//! - `reachability`: BFS reachability — `reachable_area`,
 //!   `reachable_area_with_distances`, `normalized_area`. Used by the solver
 //!   for player canonicalization and deadlock checks.
-//! - [`box_paths`]: replay/UI helpers for finding box paths given a starting
+//! - `box_paths`: replay/UI helpers for finding box paths given a starting
 //!   box and following box paths with the player. Not used by the search.
 
 mod astar;

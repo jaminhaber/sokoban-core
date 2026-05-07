@@ -128,7 +128,7 @@ impl From<Map> for State {
 /// answers with no warning.
 ///
 /// The contained state must already be canonical for the caller's strategy.
-/// Use [`Solver::canonical_key`] to construct one safely from any state.
+/// Use `Solver::canonical_key` to construct one safely from any state.
 #[derive(Clone, Debug)]
 pub struct StateKey {
     state: State,
