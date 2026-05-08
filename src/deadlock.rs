@@ -25,6 +25,7 @@ pub use static_analysis::{
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::str::FromStr;
 
     use super::*;
@@ -221,5 +222,80 @@ mod tests {
         assert!(!introduces_corral_deadlock(
             &map, pushed_to, &post_push, new_player
         ));
+    }
+
+    /// Three boxes A-B-C in a horizontal row, walls top and bottom of all
+    /// three. After pushing A, the post-push state has A on goal, B on goal,
+    /// and C off goal. The whole row is mutually frozen (every box's
+    /// horizontal axis is blocked by frozen neighbors, and every box's
+    /// vertical axis is blocked by walls), so this is a freeze deadlock —
+    /// C is permanently stuck off-goal.
+    ///
+    /// Regression test: a previous short-circuit in `is_freeze_deadlock`
+    /// stopped recursing into the right-hand neighbor as soon as the
+    /// left-hand neighbor returned true, leaving C out of `visited`.
+    /// `introduces_freeze_deadlock` then walked the partial cluster, missed
+    /// the off-goal C, and returned false.
+    ///
+    /// Layout (XSB top → bottom; player on the right side of the row).
+    /// The parsed map has only A and B as boxes-on-goals; the third box C
+    /// is supplied via the post-push `BoxSet` (the cell at C is just floor
+    /// in the parsed map, off-goal).
+    /// ```text
+    /// ##########
+    /// # ###### #     walls directly above A, B, C
+    /// #  ** @  #     A on goal, B on goal, C is the floor at (5, 2)
+    /// # ###### #     walls directly below A, B, C
+    /// ##########
+    /// ```
+    #[test]
+    fn introduces_freeze_deadlock_walks_full_cluster_for_off_goal_member() {
+        let xsb = "##########\n\
+                   # ###### #\n\
+                   #  ** @  #\n\
+                   # ###### #\n\
+                   ##########\n";
+        let map = Map::from_str(xsb).unwrap();
+        let a = IVector2::new(3, 2);
+        let b = IVector2::new(4, 2);
+        let c = IVector2::new(5, 2);
+
+        // Sanity: A and B are on goals, C is not.
+        assert!(map[a].intersects(Tiles::Goal));
+        assert!(map[b].intersects(Tiles::Goal));
+        assert!(!map[c].intersects(Tiles::Goal));
+
+        // Hypothetical post-push state: three boxes in a row at A, B, C.
+        let post_push = BoxSet::from_iter(map.dimensions().x, [a, b, c]);
+
+        // C is off-goal and frozen, so the push introduces a freeze deadlock.
+        assert!(introduces_freeze_deadlock(&map, a, &post_push));
+    }
+
+    /// `is_freeze_deadlock` must not panic when called on a malformed map
+    /// without a wall perimeter. A box at the very edge of the map has
+    /// out-of-bounds neighbors; indexing the map at those positions panics.
+    /// The function is `pub`, so callers can construct such maps via
+    /// `Map::with_dimensions`. Treat out-of-bounds as a wall — the axis is
+    /// blocked by the map edge with the same semantics as a wall.
+    #[test]
+    fn is_freeze_deadlock_handles_out_of_bounds_neighbors() {
+        let dimensions = IVector2::new(3, 3);
+        let map = Map::with_dimensions(dimensions);
+
+        // Corner box: both vertical and horizontal axes have an out-of-bounds
+        // neighbor. With OOB-as-wall, both axes are "blocked by the edge"
+        // and the box is reported as frozen — and crucially, no panic.
+        let corner = IVector2::new(0, 0);
+        let corner_set = BoxSet::from_iter(dimensions.x, [corner]);
+        let mut visited = HashSet::new();
+        assert!(is_freeze_deadlock(&map, corner, &corner_set, &mut visited));
+
+        // Center box: both axes are open (in-bounds floor on both sides),
+        // so the box is not frozen.
+        let center = IVector2::new(1, 1);
+        let center_set = BoxSet::from_iter(dimensions.x, [center]);
+        let mut visited = HashSet::new();
+        assert!(!is_freeze_deadlock(&map, center, &center_set, &mut visited));
     }
 }

@@ -63,17 +63,31 @@ pub fn is_freeze_deadlock(
             box_position + &direction[1].into(),
         ];
 
+        // Axis blocked by the map edge? Treat out-of-bounds the same as a
+        // wall: the box cannot be pushed past the edge of the map. This also
+        // protects the wall checks below from indexing the map at an invalid
+        // position. Production levels always have a wall perimeter, but
+        // `is_freeze_deadlock` is `pub` and callers may construct malformed
+        // maps via `Map::with_dimensions` plus manual setup.
+        if !map.in_bounds(neighbors[0]) || !map.in_bounds(neighbors[1]) {
+            continue;
+        }
+
         // Axis blocked by walls?
         if map[neighbors[0]].intersects(Tiles::Wall) || map[neighbors[1]].intersects(Tiles::Wall) {
             continue;
         }
 
-        // Axis blocked by frozen-box neighbors?
-        if (box_positions.contains(&neighbors[0])
-            && is_freeze_deadlock(map, neighbors[0], box_positions, visited))
-            || (box_positions.contains(&neighbors[1])
-                && is_freeze_deadlock(map, neighbors[1], box_positions, visited))
-        {
+        // Axis blocked by frozen-box neighbors? Both subtrees must be
+        // explored regardless of short-circuit so that `visited` accumulates
+        // the full frozen cluster — `introduces_freeze_deadlock` walks
+        // `visited` looking for off-goal members, and a missed neighbor
+        // could hide an off-goal box.
+        let blocked_by_neighbor_0 = box_positions.contains(&neighbors[0])
+            && is_freeze_deadlock(map, neighbors[0], box_positions, visited);
+        let blocked_by_neighbor_1 = box_positions.contains(&neighbors[1])
+            && is_freeze_deadlock(map, neighbors[1], box_positions, visited);
+        if blocked_by_neighbor_0 || blocked_by_neighbor_1 {
             continue;
         }
 

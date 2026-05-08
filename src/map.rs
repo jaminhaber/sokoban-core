@@ -226,7 +226,75 @@ impl Map {
 
     /// Truncates the map to the provided dimensions and copies tiles from the
     /// original map start at the specified offset to the new map.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the following invariants are violated:
+    /// - `offset.x` and `offset.y` are non-negative.
+    /// - `new_dimensions.x` and `new_dimensions.y` are positive.
+    /// - The source region `offset .. offset + new_dimensions` fits inside the
+    ///   original map's dimensions.
+    /// - The player position lies inside the truncation window (i.e. `offset <=
+    ///   player_position` componentwise, and the result lies inside
+    ///   `new_dimensions`).
+    /// - Every box and goal position lies inside the truncation window.
     pub fn truncate(&mut self, new_dimensions: IVector2, offset: IVector2) {
+        assert!(
+            offset.x >= 0 && offset.y >= 0,
+            "Map::truncate: offset {:?} must have non-negative components",
+            offset,
+        );
+        assert!(
+            new_dimensions.x > 0 && new_dimensions.y > 0,
+            "Map::truncate: new_dimensions {:?} must have positive components",
+            new_dimensions,
+        );
+        assert!(
+            offset.x + new_dimensions.x <= self.dimensions.x
+                && offset.y + new_dimensions.y <= self.dimensions.y,
+            "Map::truncate: offset {:?} plus new_dimensions {:?} exceeds original dimensions {:?}",
+            offset,
+            new_dimensions,
+            self.dimensions,
+        );
+        assert!(
+            offset.x <= self.player_position.x && offset.y <= self.player_position.y,
+            "Map::truncate: offset {:?} would put player_position {:?} out of bounds",
+            offset,
+            self.player_position,
+        );
+        let new_player_position = self.player_position - offset;
+        assert!(
+            new_player_position.x < new_dimensions.x && new_player_position.y < new_dimensions.y,
+            "Map::truncate: offset {:?} would put player_position {:?} out of bounds",
+            offset,
+            self.player_position,
+        );
+        for box_position in &self.box_positions {
+            let new_box_position = box_position - offset;
+            assert!(
+                new_box_position.x >= 0
+                    && new_box_position.y >= 0
+                    && new_box_position.x < new_dimensions.x
+                    && new_box_position.y < new_dimensions.y,
+                "Map::truncate: offset {:?} would put box_position {:?} out of bounds",
+                offset,
+                box_position,
+            );
+        }
+        for goal_position in &self.goal_positions {
+            let new_goal_position = *goal_position - offset;
+            assert!(
+                new_goal_position.x >= 0
+                    && new_goal_position.y >= 0
+                    && new_goal_position.x < new_dimensions.x
+                    && new_goal_position.y < new_dimensions.y,
+                "Map::truncate: offset {:?} would put goal_position {:?} out of bounds",
+                offset,
+                goal_position,
+            );
+        }
+
         let mut clamped_map = Map::with_dimensions(new_dimensions);
         for y in 0..new_dimensions.y {
             for x in 0..new_dimensions.x {

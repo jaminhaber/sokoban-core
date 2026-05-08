@@ -199,6 +199,37 @@ fn fast_weight_is_clamped_to_at_least_one() {
 }
 
 #[test]
+fn fast_weight_rejects_non_finite_values() {
+    // INFINITY and NaN must not propagate into the priority computation, where
+    // they would saturate every node's f-value to i32::MAX and break heap
+    // ordering. The setter must clamp to a finite value and the search must
+    // still produce a valid solution.
+    let map = Level::from_str(TINY).unwrap().map().clone();
+
+    let inf_solver = Solver::new(map.clone(), Strategy::Fast).with_fast_weight(f32::INFINITY);
+    assert!(
+        inf_solver.fast_weight().is_finite(),
+        "fast_weight() returned non-finite value {} for INFINITY input",
+        inf_solver.fast_weight()
+    );
+    assert!(inf_solver.a_star_search().is_ok());
+
+    let nan_solver = Solver::new(map.clone(), Strategy::Fast).with_fast_weight(f32::NAN);
+    assert!(
+        nan_solver.fast_weight().is_finite(),
+        "fast_weight() returned non-finite value {} for NaN input",
+        nan_solver.fast_weight()
+    );
+    assert!(nan_solver.fast_weight() >= 1.0);
+    assert!(nan_solver.a_star_search().is_ok());
+
+    let neg_inf_solver = Solver::new(map, Strategy::Fast).with_fast_weight(f32::NEG_INFINITY);
+    assert!(neg_inf_solver.fast_weight().is_finite());
+    assert!(neg_inf_solver.fast_weight() >= 1.0);
+    assert!(neg_inf_solver.a_star_search().is_ok());
+}
+
+#[test]
 fn tunnel_macros_toggle_keeps_solutions_valid() {
     let mut with = load_level_from_file("assets/BoxWorld_100.xsb", 1);
     let mut without = load_level_from_file("assets/BoxWorld_100.xsb", 1);
@@ -339,6 +370,79 @@ fn distance_matrix_self_distance_is_zero() {
         // Distance from a goal to itself in the abstraction is 0.
         let to_goal = dm.get(&goal).expect("goal missing from distance matrix");
         assert_eq!(to_goal.get(&goal).copied(), Some(0));
+    }
+}
+
+/// `lower_bounds()` and `distance_matrix()` are computed by a single function
+/// returning a `(LowerBounds, DistanceMatrix)` pair. The accessors must share
+/// one cached pair so the BFS runs once total — and the two halves stay
+/// internally consistent: for every cell present in `lower_bounds`, the value
+/// must equal the minimum over `distance_matrix[pos]`.
+#[test]
+fn lower_bounds_and_distance_matrix_are_consistent() {
+    let map = load_level_from_file("assets/Microban_155.xsb", 3)
+        .map()
+        .clone();
+    let solver = Solver::new(map, Strategy::Fast);
+
+    // Order the calls so the lower-bounds accessor runs first; both must see
+    // the same precomputed pair.
+    let lb = solver.lower_bounds();
+    let dm = solver.distance_matrix();
+
+    for (&pos, &expected) in lb {
+        let row = dm
+            .get(&pos)
+            .expect("lower_bounds entry missing from distance_matrix");
+        let min_in_row = row
+            .values()
+            .copied()
+            .min()
+            .expect("distance_matrix row should not be empty");
+        assert_eq!(
+            min_in_row, expected,
+            "lower_bound at {:?} disagrees with min(distance_matrix[{:?}])",
+            pos, pos
+        );
+    }
+
+    // Every position present in the distance matrix should also appear in the
+    // lower bounds — both come from the same precompute pass.
+    for &pos in dm.keys() {
+        assert!(
+            lb.contains_key(&pos),
+            "{:?} present in distance_matrix but missing from lower_bounds",
+            pos
+        );
+    }
+}
+
+/// Calling `distance_matrix()` first and then `lower_bounds()` must return the
+/// same data — a regression test guarding against the refactor caching the
+/// halves independently.
+#[test]
+fn distance_matrix_then_lower_bounds_are_consistent() {
+    let map = load_level_from_file("assets/Microban_155.xsb", 3)
+        .map()
+        .clone();
+    let solver = Solver::new(map, Strategy::Fast);
+
+    let dm = solver.distance_matrix();
+    let lb = solver.lower_bounds();
+
+    for (&pos, row) in dm {
+        let min_in_row = row
+            .values()
+            .copied()
+            .min()
+            .expect("distance_matrix row should not be empty");
+        assert_eq!(
+            lb.get(&pos).copied(),
+            Some(min_in_row),
+            "lower_bound at {:?} disagrees with min(distance_matrix[{:?}])",
+            pos,
+            pos
+        );
     }
 }
 

@@ -368,6 +368,9 @@ fn truncate_resizes_and_offsets() {
     // position in the smaller map.
     let mut map = Map::with_dimensions(IVector2::new(10, 10));
     map[IVector2::new(3, 4)] = Tiles::Wall;
+    // Place the player inside the truncation window so the truncate
+    // contract is satisfied.
+    map.set_player_position(IVector2::new(4, 5));
 
     map.truncate(IVector2::new(5, 5), IVector2::new(2, 3));
 
@@ -376,6 +379,22 @@ fn truncate_resizes_and_offsets() {
     assert_eq!(map[IVector2::new(1, 1)], Tiles::Wall);
     // Cells outside the wall stay empty (the source region was empty there).
     assert_eq!(map[IVector2::new(0, 0)], Tiles::empty());
+    // (4, 5) - (2, 3) = (2, 2) in the new map.
+    assert_eq!(map.player_position(), IVector2::new(2, 2));
+}
+
+#[test]
+#[should_panic(expected = "Map::truncate: offset")]
+fn truncate_rejects_offset_that_puts_player_out_of_bounds() {
+    // Build a 5×5 map (no boxes) with the player at (1, 1). Calling
+    // `truncate` with an offset of (2, 2) would push the player position to
+    // (-1, -1), which is out of bounds for the new map. The function should
+    // reject this with a clear panic message rather than silently corrupting
+    // state or panicking with a confusing array-out-of-bounds error.
+    let mut map = Map::with_dimensions(IVector2::new(5, 5));
+    map.set_player_position(IVector2::new(1, 1));
+
+    map.truncate(IVector2::new(3, 3), IVector2::new(2, 2));
 }
 
 #[test]

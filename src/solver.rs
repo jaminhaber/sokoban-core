@@ -141,11 +141,16 @@ pub struct Solver {
     // are not enough to keep the search bounded.
     corral_pruning: bool,
 
-    // lower_bounds[pos] = minimum pushes from pos to any goal in the abstraction
-    lower_bounds: OnceCell<FxHashMap<IVector2, i32>>,
-
-    // distance_matrix[pos][goal] = minimum pushes from pos to that goal in the abstraction
-    distance_matrix: OnceCell<FxHashMap<IVector2, FxHashMap<IVector2, i32>>>,
+    // Cached push-distance precompute. `compute_push_distances` returns both
+    // halves from a single pass of reverse BFS over the goal cells; sharing one
+    // `OnceCell` ensures that pass runs once even if both accessors are called.
+    //
+    // - `.0` is `lower_bounds`: minimum pushes from pos to any goal in the abstraction.
+    // - `.1` is `distance_matrix`: minimum pushes from pos to that goal in the abstraction.
+    push_distances: OnceCell<(
+        FxHashMap<IVector2, i32>,
+        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
+    )>,
 
     // tunnel macros keyed by (box_position, push_direction)
     tunnels: OnceCell<FxHashSet<(IVector2, Direction)>>,
@@ -178,8 +183,7 @@ impl Solver {
             fast_weight: 2.0,
             tunnel_macros: false,
             corral_pruning: false,
-            lower_bounds: OnceCell::new(),
-            distance_matrix: OnceCell::new(),
+            push_distances: OnceCell::new(),
             tunnels: OnceCell::new(),
             heuristic_cache: RefCell::new(FxHashMap::default()),
             terminator: Terminator::None,
@@ -232,11 +236,21 @@ impl Solver {
     ///
     /// `weight = 1.0` behaves like optimal A* in push space.
     /// Larger values tend to find solutions faster but may sacrifice
-    /// optimality. Values below 1.0 are clamped to 1.0.
+    /// optimality. Non-finite weights (NaN, ±INFINITY) and weights below
+    /// 1.0 are clamped to 1.0; weights above [`Self::MAX_FAST_WEIGHT`] are
+    /// clamped to that ceiling so the priority computation stays in i32 range.
     pub fn with_fast_weight(mut self, weight: f32) -> Self {
-        self.fast_weight = weight.max(1.0);
+        self.fast_weight = if weight.is_nan() || weight < 1.0 {
+            1.0
+        } else {
+            weight.min(Self::MAX_FAST_WEIGHT)
+        };
         self
     }
+
+    /// Upper clamp for [`Self::with_fast_weight`]. Keeps `pushes + w*h` in
+    /// i32 range for any plausible heuristic value.
+    pub const MAX_FAST_WEIGHT: f32 = 1e6;
 
     /// Returns the terminator.
     pub fn terminator(&self) -> Terminator {
@@ -291,14 +305,25 @@ impl Solver {
     /// Returns lower bounds (dead-square / min-to-any-goal) computed from push
     /// distances.
     pub fn lower_bounds(&self) -> &FxHashMap<IVector2, i32> {
-        self.lower_bounds
-            .get_or_init(|| preprocess::compute_push_distances(&self.map).0)
+        &self.push_distances().0
     }
 
     /// Returns the push distance matrix used by the matching heuristic.
     pub fn distance_matrix(&self) -> &FxHashMap<IVector2, FxHashMap<IVector2, i32>> {
-        self.distance_matrix
-            .get_or_init(|| preprocess::compute_push_distances(&self.map).1)
+        &self.push_distances().1
+    }
+
+    /// Returns the cached `(lower_bounds, distance_matrix)` pair, computing it
+    /// on first access. Both halves come from a single pass of
+    /// [`preprocess::compute_push_distances`] so the BFS work runs once.
+    fn push_distances(
+        &self,
+    ) -> &(
+        FxHashMap<IVector2, i32>,
+        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
+    ) {
+        self.push_distances
+            .get_or_init(|| preprocess::compute_push_distances(&self.map))
     }
 
     /// Returns the tunnel macro table.
