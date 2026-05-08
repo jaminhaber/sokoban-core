@@ -1,4 +1,8 @@
 /target
 Cargo.lock
 
+# Editor / IDE
 .idea/
+
+# macOS Finder metadata
+.DS_Store
