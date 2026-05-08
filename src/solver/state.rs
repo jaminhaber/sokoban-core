@@ -82,12 +82,14 @@ impl State {
         }
     }
 
-    /// Normalizes the player position to the top-left of its reachable area.
+    /// Normalizes the player position to the lexicographically smallest cell
+    /// of its reachable area (smallest `y`, then smallest `x`).
     ///
     /// Two states with identical box configurations and player positions in
     /// the same reachable region collapse to the same normalized state. Used
     /// by push-space search to deduplicate states that differ only in the
-    /// player's standing position within an open region.
+    /// player's standing position within an open region. The exact cell chosen
+    /// doesn't matter for correctness — only that it's deterministic.
     pub fn normalize(&mut self, map: &Map) {
         self.player_position = normalized_area(&reachable_area(self.player_position, |position| {
             !(map[position].intersects(Tiles::Wall) || self.box_positions.contains(&position))

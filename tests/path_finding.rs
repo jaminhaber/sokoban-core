@@ -99,8 +99,10 @@ fn reachable_area_with_distances_returns_bfs_distances() {
 }
 
 #[test]
-fn normalized_area_picks_top_left_by_y_then_x() {
-    // Three cells: the order should be (1, 0) — smallest y, then smallest x.
+fn normalized_area_picks_lex_min_by_y_then_x() {
+    // Picks the lexicographically smallest (y, x) — the bottom-left under
+    // this crate's Y convention. Of these three cells, (1, 0) wins on the
+    // smallest y, breaking the tie with (3, 0) on smaller x.
     let area: FxHashSet<IVector2> = [
         IVector2::new(2, 5),
         IVector2::new(1, 0),

@@ -178,11 +178,14 @@ impl Map {
         let mut new_dimensions = self.dimensions;
         let mut offset = IVector2::new(0, 0);
 
-        // Trim top empty rows and bottom empty rows
+        // Trim empty rows from both ends. Under this crate's Y convention
+        // (`Direction::Up = +y`), `y = 0` is the bottom row, so the first
+        // loop trims the bottom and the second trims the top.
         let is_row_empty = |y| {
             let mut row = (0..self.dimensions.x).map(|x| self[IVector2::new(x, y)]);
             row.all(|tiles| tiles.is_empty())
         };
+        // Trim from the bottom (y = 0 upwards).
         for y in 0..self.dimensions.y {
             if is_row_empty(y) {
                 offset.y += 1;
@@ -192,6 +195,7 @@ impl Map {
             }
         }
         debug_assert_ne!(new_dimensions.y, 0);
+        // Trim from the top (y = dimensions.y - 1 downwards).
         for y in (0..self.dimensions.y).rev() {
             if is_row_empty(y) {
                 new_dimensions.y -= 1;
@@ -200,11 +204,12 @@ impl Map {
             }
         }
 
-        // Trim left empty columns and right empty columns
+        // Trim empty columns from both ends.
         let is_column_empty = |x| {
             let mut column = (0..self.dimensions.y).map(|y| self[IVector2::new(x, y)]);
             column.all(|tiles| tiles.is_empty())
         };
+        // Trim from the left (x = 0 rightwards).
         for x in 0..self.dimensions.x {
             if is_column_empty(x) {
                 offset.x += 1;
@@ -213,6 +218,7 @@ impl Map {
                 break;
             }
         }
+        // Trim from the right (x = dimensions.x - 1 leftwards).
         for x in (0..self.dimensions.x).rev() {
             if is_column_empty(x) {
                 new_dimensions.x -= 1;

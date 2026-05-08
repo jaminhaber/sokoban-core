@@ -144,7 +144,6 @@ fn display() {
 }
 
 #[test]
-#[ignore]
 fn from_actions() {
     let actions =
         Actions::from_str("uulLdlluRRllddlluuRRdrruRurDDulldldddllUdrruuluullddRluurrdrrurrdDldLrurrdLLuruulldlluRRRurDDullllllddrddrrUUddlluuluurrdRurrrdDldLrurrdLLuruullllllddrddrrUULuurrrrdddlLruruullllddrUluRRRurDDullllllddRddrrUUdrrrruLdllluUluRRRurDDDrdLL")
@@ -153,14 +152,14 @@ fn from_actions() {
         Map::from_actions(actions).unwrap(),
         Map::from_str(
             r#"
-            -#####----
-            -#   #####
-            ##$# *   #
-            #  . #.@ #
-            # #  .# ##
-            # $  $  #-
-            ######  #-
             -----####-
+            ######  #-
+            # $  $  #-
+            # #  .# ##
+            #  . #.@ #
+            ##$# *   #
+            -#   #####
+            -#####----
         "#
         )
         .unwrap()
@@ -168,7 +167,6 @@ fn from_actions() {
 }
 
 #[test]
-#[ignore]
 fn normalize() {
     // Steaming Hot
     let mut actual = Map::from_str(
@@ -196,14 +194,14 @@ fn normalize() {
     let expected = Map::from_str(
         r#"
         #########
-        #.$+_.__#
-        #.$.$$$_#
-        #.$.$.$_#
-        #.$.$.$_#
-        #.$.$.$_#
-        #.$.$.$_#
-        #.$$$.$_#
         #._._.$_#
+        #.$$$.$_#
+        #.$.$.$_#
+        #.$.$.$_#
+        #.$.$.$_#
+        #.$.$.$_#
+        #.$.$$$_#
+        #.$+_.__#
         #########
     "#,
     )
@@ -217,17 +215,17 @@ fn normalize() {
         .clone();
     let expected = Map::from_str(
         r#"
-        --#####---
-        --#@__#---
+        --####----
+        --#__##---
+        --#___#---
+        --#___#---
         ###$_$####
         #_$...$__#
         #__._.___#
         #_$...$__#
         ###$_$####
-        --#___#---
-        --#___#---
-        --#__##---
-        --####----
+        --#@__#---
+        --#####---
     "#,
     )
     .unwrap();
@@ -239,23 +237,23 @@ fn normalize() {
     let mut actual = Map::from_str(WORLDCUP2014).unwrap();
     let expected = Map::from_str(
         r#"
-        --###########----
-        --#____*__._###--
-        -##_*_*_*_*___#--
-        -#_*_**_*_*_$*###
-        ##_*__*_*_*_*@*_#
-        #___*_*_*_*_*_*_#
-        #_*_*_$*__*__**_#
-        #_.*#___#__#__###
-        ##____#########--
-        -###__#----------
-        --#__##----------
-        --#___##---------
-        --###__##--------
-        ----#___##-------
-        ----###__#-------
-        ------#__#-------
         ------####-------
+        ------#__#-------
+        ----###__#-------
+        ----#___##-------
+        --###__##--------
+        --#___##---------
+        --#__##----------
+        -###__#----------
+        ##____#########--
+        #_.*#___#__#__###
+        #_*_*_$*__*__**_#
+        #___*_*_*_*_*_*_#
+        ##_*__*_*_*_*@*_#
+        -#_*_**_*_*_$*###
+        -##_*_*_*_*___#--
+        --#____*__._###--
+        --###########----
     "#,
     )
     .unwrap();

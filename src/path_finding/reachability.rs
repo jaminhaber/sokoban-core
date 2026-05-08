@@ -79,11 +79,14 @@ pub fn reachable_area_with_distances(
     dist
 }
 
-/// Returns the top-left position in `area`, ordered by `(y, x)`.
+/// Returns the lexicographically smallest position in `area`, ordering by
+/// `y` first then `x` — i.e. the bottom-left cell under this crate's Y
+/// convention (`Direction::Up = +y`, so `y = 0` is the bottom row).
 ///
 /// Used by push-space search to canonicalize the player's position within a
 /// reachable region: any two states in which the player stands in the same
-/// reachable region collapse to the same key.
+/// reachable region collapse to the same key. The exact choice of cell
+/// doesn't matter for correctness — only that the choice is deterministic.
 pub fn normalized_area(area: &FxHashSet<IVector2>) -> Option<IVector2> {
     area.iter()
         .min_by(|a, b| a.y.cmp(&b.y).then_with(|| a.x.cmp(&b.x)))
