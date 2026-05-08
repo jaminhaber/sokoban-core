@@ -16,3 +16,16 @@ fn action_to_char() {
     assert_eq!(char::from(Action::Move(Direction::Up)), 'u');
     assert_eq!(char::from(Action::Push(Direction::Up)), 'U');
 }
+
+#[test]
+fn action_display() {
+    use Direction::*;
+    assert_eq!(format!("{}", Action::Move(Up)), "u");
+    assert_eq!(format!("{}", Action::Move(Down)), "d");
+    assert_eq!(format!("{}", Action::Move(Left)), "l");
+    assert_eq!(format!("{}", Action::Move(Right)), "r");
+    assert_eq!(format!("{}", Action::Push(Up)), "U");
+    assert_eq!(format!("{}", Action::Push(Down)), "D");
+    assert_eq!(format!("{}", Action::Push(Left)), "L");
+    assert_eq!(format!("{}", Action::Push(Right)), "R");
+}

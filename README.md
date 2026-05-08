@@ -1,6 +1,6 @@
 # Sokoban Core
 
-A library provides the implementation of algorithms and data structures related to [Sokoban]. Forked from https://github.com/ShenMian/sokoban_core
+A library provides the implementation of algorithms and data structures related to [Sokoban]. Forked from <https://github.com/ShenMian/sokoban_core>.
 
 ## Features
 

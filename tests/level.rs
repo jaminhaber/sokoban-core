@@ -1,7 +1,7 @@
 use std::{fs, str::FromStr};
 
 use indoc::indoc;
-use sokoban_core::{direction::Direction, ActionError, Level, ParseLevelError, ParseMapError};
+use sokoban_core::{direction::Direction, ActionError, IVector2, Level, ParseLevelError, ParseMapError};
 
 mod utils;
 use utils::*;
@@ -274,6 +274,39 @@ fn player_reachable_area_excludes_walls_and_boxes() {
     // The reachable region is just the player cell — the box at column 2
     // blocks it from reaching column 3.
     assert_eq!(area.len(), 1);
+}
+
+#[test]
+fn map_mut_lets_callers_mutate_the_underlying_map() {
+    let mut level = Level::from_str(SIMPLEST).unwrap();
+    let map = level.map_mut();
+    let pos = IVector2::new(2, 1);
+    // Mutate a cell — the change must persist through the borrow.
+    map[pos].insert(sokoban_core::tiles::Tiles::Goal);
+    assert!(level.map()[pos].intersects(sokoban_core::tiles::Tiles::Goal));
+}
+
+#[test]
+fn load_nth_from_reader_returns_the_requested_level() {
+    use std::io::BufReader;
+    let file = std::fs::File::open("assets/Microban_155.xsb").unwrap();
+    let reader = BufReader::new(file);
+    let level = Level::load_nth_from_reader(reader, 3).unwrap();
+    // Microban #3 has the title "Microban #3" or similar metadata.
+    // The level is solvable; just verify it parsed and is non-trivial.
+    assert!(!level.map().box_positions().is_empty());
+}
+
+#[test]
+fn split_by_group_from_reader_yields_groups_per_level() {
+    use std::io::BufReader;
+    let file = std::fs::File::open("assets/Microban_155.xsb").unwrap();
+    let reader = BufReader::new(file);
+    // Microban_155 has 155 levels; the iterator should produce 155 groups.
+    let groups: Vec<String> = Level::split_by_group_from_reader(reader).collect();
+    assert_eq!(groups.len(), 155);
+    // Each group is a non-empty XSB blob.
+    assert!(groups.iter().all(|g| !g.trim().is_empty()));
 }
 
 #[test]

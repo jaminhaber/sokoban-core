@@ -295,6 +295,32 @@ fn lower_bounds_includes_goals_with_distance_zero() {
 }
 
 #[test]
+fn tunnels_table_is_consistent_with_is_tunnel() {
+    // Use a level that has tunnel-like corridors so the table is non-empty.
+    let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
+    let solver = Solver::new(map, Strategy::Fast);
+    let tunnels = solver.tunnels();
+
+    // Every (pos, dir) pair in the table must report `is_tunnel = true`.
+    for &(pos, dir) in tunnels {
+        assert!(solver.is_tunnel(pos, dir));
+    }
+    // And `is_tunnel` should never report a step that's not in the table.
+    use sokoban_core::direction::Direction;
+    for x in 0..solver.map().dimensions().x {
+        for y in 0..solver.map().dimensions().y {
+            for dir in Direction::iter() {
+                let pos = IVector2::new(x, y);
+                assert_eq!(
+                    solver.is_tunnel(pos, dir),
+                    tunnels.contains(&(pos, dir))
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn distance_matrix_self_distance_is_zero() {
     let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
     let solver = Solver::new(map.clone(), Strategy::Fast);

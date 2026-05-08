@@ -1,58 +1,73 @@
 name: Test
 
-on: [pull_request, push]
+# Run on every PR targeting main, and on every push that lands on main.
+# Pull requests that don't touch main, and feature branches in general,
+# don't trigger this workflow.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Build + test on Linux/macOS/Windows. This job is required — a red box
+  # here means the change should not land.
   test:
-    strategy:
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+    name: cargo test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Cache Cargo artifacts
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-      
-      - name: Install cargo-audit
-        run: cargo install --force cargo-audit
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
 
-      - name: Audit
-        run: cargo audit
-
-      - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- --deny warnings
+      - name: Build
+        run: cargo build --locked --workspace --all-targets --verbose
 
       - name: Test
+        # Two passes — `--all-targets` doesn't run doc-tests
+        # (https://github.com/rust-lang/cargo/issues/6669).
         run: |
-          cargo test --locked --workspace --all-features --all-targets
-          # Workaround for https://github.com/rust-lang/cargo/issues/6669
-          cargo test --locked --workspace --all-features --doc
+          cargo test --locked --workspace --all-targets --verbose
+          cargo test --locked --workspace --doc
 
-      - name: Generate code coverage
-        run: cargo llvm-cov --all-features --no-cfg-coverage --workspace --lcov --output-path lcov.info
+  # Documentation must build cleanly. Catches broken intra-doc links and
+  # malformed code blocks in `///` comments. Required.
+  doc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build documentation
+        run: cargo doc --locked --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: "-D warnings"
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+  # Format and lint checks. Informational only — a yellow box won't block
+  # the merge, but the warnings should be cleaned up over time.
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: lcov.info
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings

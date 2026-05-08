@@ -360,6 +360,23 @@ fn is_solved_only_when_every_box_on_a_goal() {
 }
 
 #[test]
+fn truncate_resizes_and_offsets() {
+    // Build a 10×10 map with one distinctive cell, truncate to a 5×5 window
+    // offset by (2, 3), and confirm the cell ended up at the expected
+    // position in the smaller map.
+    let mut map = Map::with_dimensions(IVector2::new(10, 10));
+    map[IVector2::new(3, 4)] = Tiles::Wall;
+
+    map.truncate(IVector2::new(5, 5), IVector2::new(2, 3));
+
+    assert_eq!(map.dimensions(), IVector2::new(5, 5));
+    // (3, 4) - (2, 3) = (1, 1) inside the new map.
+    assert_eq!(map[IVector2::new(1, 1)], Tiles::Wall);
+    // Cells outside the wall stay empty (the source region was empty there).
+    assert_eq!(map[IVector2::new(0, 0)], Tiles::empty());
+}
+
+#[test]
 fn with_dimensions_is_empty_map_at_origin() {
     let map = Map::with_dimensions(IVector2::new(3, 3));
     assert_eq!(map.dimensions(), IVector2::new(3, 3));
