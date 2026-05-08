@@ -10,8 +10,7 @@ use std::{
 
 use crate::{
     actions::Actions, box_set::BoxSet, deadlock::*, direction::Direction, error::ParseMapError,
-    level::Level, math::IVector2, path_finding::*, run_length::rle_decode, state::State,
-    tiles::Tiles,
+    level::Level, math::IVector2, path_finding::*, run_length::rle_decode, tiles::Tiles,
 };
 
 /// A grid-based map.
@@ -179,11 +178,14 @@ impl Map {
         let mut new_dimensions = self.dimensions;
         let mut offset = IVector2::new(0, 0);
 
-        // Trim top empty rows and bottom empty rows
+        // Trim empty rows from both ends. Under this crate's Y convention
+        // (`Direction::Up = +y`), `y = 0` is the bottom row, so the first
+        // loop trims the bottom and the second trims the top.
         let is_row_empty = |y| {
             let mut row = (0..self.dimensions.x).map(|x| self[IVector2::new(x, y)]);
             row.all(|tiles| tiles.is_empty())
         };
+        // Trim from the bottom (y = 0 upwards).
         for y in 0..self.dimensions.y {
             if is_row_empty(y) {
                 offset.y += 1;
@@ -193,6 +195,7 @@ impl Map {
             }
         }
         debug_assert_ne!(new_dimensions.y, 0);
+        // Trim from the top (y = dimensions.y - 1 downwards).
         for y in (0..self.dimensions.y).rev() {
             if is_row_empty(y) {
                 new_dimensions.y -= 1;
@@ -201,11 +204,12 @@ impl Map {
             }
         }
 
-        // Trim left empty columns and right empty columns
+        // Trim empty columns from both ends.
         let is_column_empty = |x| {
             let mut column = (0..self.dimensions.y).map(|y| self[IVector2::new(x, y)]);
             column.all(|tiles| tiles.is_empty())
         };
+        // Trim from the left (x = 0 rightwards).
         for x in 0..self.dimensions.x {
             if is_column_empty(x) {
                 offset.x += 1;
@@ -214,6 +218,7 @@ impl Map {
                 break;
             }
         }
+        // Trim from the right (x = dimensions.x - 1 leftwards).
         for x in (0..self.dimensions.x).rev() {
             if is_column_empty(x) {
                 new_dimensions.x -= 1;
@@ -227,7 +232,75 @@ impl Map {
 
     /// Truncates the map to the provided dimensions and copies tiles from the
     /// original map start at the specified offset to the new map.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the following invariants are violated:
+    /// - `offset.x` and `offset.y` are non-negative.
+    /// - `new_dimensions.x` and `new_dimensions.y` are positive.
+    /// - The source region `offset .. offset + new_dimensions` fits inside the
+    ///   original map's dimensions.
+    /// - The player position lies inside the truncation window (i.e. `offset <=
+    ///   player_position` componentwise, and the result lies inside
+    ///   `new_dimensions`).
+    /// - Every box and goal position lies inside the truncation window.
     pub fn truncate(&mut self, new_dimensions: IVector2, offset: IVector2) {
+        assert!(
+            offset.x >= 0 && offset.y >= 0,
+            "Map::truncate: offset {:?} must have non-negative components",
+            offset,
+        );
+        assert!(
+            new_dimensions.x > 0 && new_dimensions.y > 0,
+            "Map::truncate: new_dimensions {:?} must have positive components",
+            new_dimensions,
+        );
+        assert!(
+            offset.x + new_dimensions.x <= self.dimensions.x
+                && offset.y + new_dimensions.y <= self.dimensions.y,
+            "Map::truncate: offset {:?} plus new_dimensions {:?} exceeds original dimensions {:?}",
+            offset,
+            new_dimensions,
+            self.dimensions,
+        );
+        assert!(
+            offset.x <= self.player_position.x && offset.y <= self.player_position.y,
+            "Map::truncate: offset {:?} would put player_position {:?} out of bounds",
+            offset,
+            self.player_position,
+        );
+        let new_player_position = self.player_position - offset;
+        assert!(
+            new_player_position.x < new_dimensions.x && new_player_position.y < new_dimensions.y,
+            "Map::truncate: offset {:?} would put player_position {:?} out of bounds",
+            offset,
+            self.player_position,
+        );
+        for box_position in &self.box_positions {
+            let new_box_position = box_position - offset;
+            assert!(
+                new_box_position.x >= 0
+                    && new_box_position.y >= 0
+                    && new_box_position.x < new_dimensions.x
+                    && new_box_position.y < new_dimensions.y,
+                "Map::truncate: offset {:?} would put box_position {:?} out of bounds",
+                offset,
+                box_position,
+            );
+        }
+        for goal_position in &self.goal_positions {
+            let new_goal_position = *goal_position - offset;
+            assert!(
+                new_goal_position.x >= 0
+                    && new_goal_position.y >= 0
+                    && new_goal_position.x < new_dimensions.x
+                    && new_goal_position.y < new_dimensions.y,
+                "Map::truncate: offset {:?} would put goal_position {:?} out of bounds",
+                offset,
+                goal_position,
+            );
+        }
+
         let mut clamped_map = Map::with_dimensions(new_dimensions);
         for y in 0..new_dimensions.y {
             for x in 0..new_dimensions.x {
@@ -454,10 +527,8 @@ impl Map {
         self.data = transformed_map.data;
         self.dimensions = transformed_map.dimensions;
         self.player_position = operation(self.player_position);
-        self.box_positions = BoxSet::from_iter(
-            new_dimensions.x,
-            self.box_positions.iter().map(operation),
-        );
+        self.box_positions =
+            BoxSet::from_iter(new_dimensions.x, self.box_positions.iter().map(operation));
         self.goal_positions = self.goal_positions.iter().copied().map(operation).collect();
     }
 
@@ -633,15 +704,6 @@ impl fmt::Display for Map {
             writeln!(f)?;
         }
         Ok(())
-    }
-}
-
-impl From<Map> for State {
-    fn from(map: Map) -> Self {
-        Self {
-            player_position: map.player_position,
-            box_positions: map.box_positions,
-        }
     }
 }
 

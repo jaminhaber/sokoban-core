@@ -1,7 +1,7 @@
 //! A level.
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     fmt,
     hash::{DefaultHasher, Hash, Hasher},
     io::BufRead,
@@ -9,6 +9,7 @@ use std::{
 };
 
 use itertools::Itertools;
+use rustc_hash::FxHashSet;
 
 use crate::{
     action::Action,
@@ -150,7 +151,7 @@ impl Level {
     }
 
     /// Returns the reachable area for the player.
-    pub fn player_reachable_area(&self) -> HashSet<IVector2> {
+    pub fn player_reachable_area(&self) -> FxHashSet<IVector2> {
         reachable_area(self.map.player_position(), |position| {
             self.map.can_move(position)
         })

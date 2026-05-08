@@ -1,36 +1,129 @@
 //! A solver for the Sokoban problem.
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! use sokoban_core::prelude::*;
+//! use std::str::FromStr;
+//!
+//! let map = Map::from_str("#####\n#@$.#\n#####\n").unwrap();
+//! let solver = Solver::new(map, Strategy::Fast);
+//! let actions = solver.a_star_search().unwrap();
+//! assert!(!actions.is_empty());
+//! ```
+//!
+//! # Two orthogonal axes
+//!
+//! The solver has two independent dials:
+//!
+//! - **Algorithm** — [`Solver::a_star_search`] vs [`Solver::ida_star_search`].
+//!   Trades memory for time.
+//! - **Strategy** — [`Strategy::Fast`], [`Strategy::Greedy`],
+//!   [`Strategy::OptimalPush`], [`Strategy::OptimalMove`]. Controls the cost
+//!   function and which solution dimension is being optimized.
+//!
+//! ## Choosing an algorithm
+//!
+//! | | A* | IDA* |
+//! |---|---|---|
+//! | Memory | grows with reachable state space (potentially GB) | O(solution depth) |
+//! | Time | typically faster — never re-expands a state | re-expands states across iterations |
+//! | Returns | the [`Actions`] sequence | only `Ok(())` |
+//! | Use when | enough RAM, want the actual moves | A* is OOMing, or you only need solvability |
+//!
+//! ## Choosing a strategy
+//!
+//! | Strategy | `g` | priority `f` | Optimality |
+//! |---|---|---|---|
+//! | [`Strategy::Fast`] *(default)* | pushes | `g + w·h`, `w = 2` | within `w×` factor of optimum |
+//! | [`Strategy::Greedy`] | 0 | `h` only | not optimal — can be much longer |
+//! | [`Strategy::OptimalPush`] | pushes | `g + h` | minimum push count |
+//! | [`Strategy::OptimalMove`] | moves | `g + h` | minimum player-step count |
+//!
+//! All four use the same heuristic `h`: minimum-cost bipartite matching of
+//! boxes to goals over the empty-board push-distance abstraction. It is
+//! admissible (never overestimates), which is what gives the optimal modes
+//! their guarantee and `Fast`'s bounded-suboptimal guarantee.
+//!
+//! `Greedy` ignores `g` entirely. It still works inside the [`a_star_search`]
+//! framework because setting every node's `g` to zero turns the reopen check
+//! into visited-once semantics. IDA* with `Greedy` is well-defined but
+//! converges poorly — prefer [`a_star_search`] for greedy.
+//!
+//! ## Configuration
+//!
+//! Builder methods on [`Solver`] tune the search:
+//!
+//! - [`Solver::with_fast_weight`] — override `Fast`'s weight; `w = 1.0`
+//!   collapses `Fast` to `OptimalPush`.
+//! - [`Solver::with_tunnel_macros`] — compress forced corridor pushes into a
+//!   single successor. Cuts depth on tunnel-heavy maps.
+//! - [`Solver::with_corral_pruning`] — extra conservative PI-corral deadlock
+//!   check on every push. Off by default; expensive on easy levels but useful
+//!   on hard ones.
+//! - [`Solver::with_terminator`] — bound the search by wall-clock or iteration
+//!   count.
+//!
+//! # Module layout
+//!
+//! - This file: the [`Solver`] struct, builder methods, and the A* / IDA*
+//!   search loops that read directly from the solver's private state.
+//! - `strategy`: the [`Strategy`] and [`Terminator`] enums plus the internal
+//!   `TerminatorInner` and `IdaDfsResult` types.
+//! - `preprocess`: pure functions that compute the push-distance abstraction
+//!   (lower bounds + distance matrix) and the tunnel-macro table.
+//! - `reconstruct`: walks the parent chain of canonical states and emits a
+//!   valid player action sequence, simulating forward from the real initial
+//!   state to find walking paths between pushes.
+//! - `state` / `node`: the canonical `State` / `StateKey` types and the search
+//!   `Node` with its successor generator. Private to the solver module — no
+//!   other code in the crate touches them.
+//!
+//! [`a_star_search`]: Solver::a_star_search
 
-use crate::{
-    direction::Direction, math::IVector2, node::Node, path_finding::find_path, state::State,
-    Action, Actions, Map, SearchError, Tiles,
-};
+mod node;
+mod preprocess;
+mod reconstruct;
+mod state;
+mod strategy;
+
+pub use strategy::{Strategy, Terminator};
+
+use node::Node;
+use state::{State, StateKey};
+use strategy::{IdaDfsResult, TerminatorInner};
+
+use crate::{box_set::BoxSet, direction::Direction, math::IVector2, Actions, Map, SearchError};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
-    cell::OnceCell,
-    collections::{BinaryHeap, HashMap, HashSet, VecDeque},
-    time::Duration,
+    cell::{OnceCell, RefCell},
+    collections::BinaryHeap,
 };
 
-/// The strategy to use when searching for a solution.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
-pub enum Strategy {
-    /// Search quickly for any solution (not necessarily optimal).
-    ///
-    /// Implemented as **weighted A*** in push space using a strong admissible heuristic.
-    #[default]
-    Fast,
-
-    /// Find a push-optimal solution (minimum number of pushes).
-    OptimalPush,
-
-    /// Find a move-optimal solution (minimum number of player moves).
-    OptimalMove,
-}
+/// Maximum number of heuristic-cache entries before a wholesale flush. At
+/// ~520 bytes per entry (BoxSet + i32 + map overhead), 1M caps memory near
+/// 520 MB. Tune up if you have memory headroom and search hard levels.
+const HEURISTIC_CACHE_LIMIT: usize = 1_000_000;
 
 /// A solver for the Sokoban problem.
 ///
-/// This solver operates primarily in **push space** (each edge is a push).
-/// For `OptimalMove`, push edges are weighted by the player's distance to the
-/// behind-square plus 1 for the push.
+/// Construct with [`Solver::new`], optionally chain builder methods, then
+/// call [`Solver::a_star_search`] (returns the action sequence) or
+/// [`Solver::ida_star_search`] (just confirms solvability with much less
+/// memory).
+///
+/// The solver operates primarily in **push space** — each search edge is a
+/// box push, and the player's walking moves between pushes are reconstructed
+/// at the end. For [`Strategy::OptimalMove`], push edges are weighted by the
+/// player's walking distance to the behind-square plus 1 for the push.
+///
+/// Expensive preprocessing (push distances, dead squares, tunnel macros) is
+/// computed lazily on first access and cached on the solver. Cloning a
+/// `Solver` is cheap before any preprocessing runs and copies the caches
+/// after. Construct a fresh `Solver` per level if you don't need to share.
+///
+/// See the [module-level docs](crate::solver) for a comparison of strategies
+/// and search algorithms.
 #[derive(Clone, Debug)]
 pub struct Solver {
     map: Map,
@@ -42,91 +135,57 @@ pub struct Solver {
     // Whether to compress forced corridor pushes using tunnel macros.
     tunnel_macros: bool,
 
-    // lower_bounds[pos] = minimum pushes from pos to any goal in the abstraction
-    lower_bounds: OnceCell<HashMap<IVector2, i32>>,
+    // Whether to run the conservative PI-corral deadlock check on each push.
+    // Off by default: the per-push cost (two BFSes) outweighs the pruning win
+    // on small/easy levels. Enable on hard levels where freeze and 2×2 alone
+    // are not enough to keep the search bounded.
+    corral_pruning: bool,
 
-    // distance_matrix[pos][goal] = minimum pushes from pos to that goal in the abstraction
-    distance_matrix: OnceCell<HashMap<IVector2, HashMap<IVector2, i32>>>,
+    // Cached push-distance precompute. `compute_push_distances` returns both
+    // halves from a single pass of reverse BFS over the goal cells; sharing one
+    // `OnceCell` ensures that pass runs once even if both accessors are called.
+    //
+    // - `.0` is `lower_bounds`: minimum pushes from pos to any goal in the abstraction.
+    // - `.1` is `distance_matrix`: minimum pushes from pos to that goal in the abstraction.
+    push_distances: OnceCell<(
+        FxHashMap<IVector2, i32>,
+        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
+    )>,
 
     // tunnel macros keyed by (box_position, push_direction)
-    tunnels: OnceCell<HashSet<(IVector2, Direction)>>,
+    tunnels: OnceCell<FxHashSet<(IVector2, Direction)>>,
+
+    // Heuristic memoization keyed on box configuration. The matching heuristic
+    // depends only on box positions (player position is irrelevant), so the
+    // same h-value applies to every state with the same `BoxSet`. A* and IDA*
+    // visit each `BoxSet` many times, often with different player positions or
+    // along different paths; this avoids paying the O(n·2ⁿ) matching cost on
+    // every revisit. Wrapped in `RefCell` because `State::heuristic` is called
+    // through `&Solver`.
+    heuristic_cache: RefCell<FxHashMap<BoxSet, i32>>,
 
     terminator: Terminator,
 }
 
-/// How to terminate the search.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
-pub enum Terminator {
-    /// Never terminate.
-    #[default]
-    None,
-    /// Terminate after a timeout.
-    Timeout(Duration),
-    /// Terminate after a number of iterations.
-    Iterations(u64),
-}
-
-impl Terminator {
-    /// Creates a new `Terminator` that terminates after the specified number of iterations.
-    pub fn new_iterations(max_iterations: u64) -> Self {
-        Self::Iterations(max_iterations)
-    }
-
-    /// Creates a new `Terminator` that terminates after the specified number of seconds.
-    pub fn new_duration_secs(secs: u64) -> Self {
-        Self::Timeout(Duration::from_secs(secs))
-    }
-}
-
-struct TerminatorInner {
-    terminator: Terminator,
-    iterations: u64,
-    start_time: std::time::Instant,
-}
-
-impl TerminatorInner {
-    fn new(terminator: Terminator) -> Self {
-        Self {
-            terminator,
-            iterations: 0,
-            start_time: std::time::Instant::now(),
-        }
-    }
-
-    fn tick(&mut self) -> bool {
-        self.iterations += 1;
-        match self.terminator {
-            Terminator::None => false,
-            Terminator::Timeout(duration) => self.start_time.elapsed() >= duration,
-            Terminator::Iterations(max_iterations) => self.iterations >= max_iterations,
-        }
-    }
-}
-/// Internal return type for IDA* DFS.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum IdaDfsResult {
-    /// A goal state was found in the current iteration.
-    Found,
-    /// No goal found; the next iteration should use this threshold.
-    NextThreshold(i32),
-    /// The terminator requested early stop.
-    Terminated,
-}
+// =====================================================================
+// Construction & builder methods.
+// =====================================================================
 
 impl Solver {
     /// Creates a new `Solver`.
     ///
-    /// Expensive preprocessing (push distances, dead squares, tunnels) is computed lazily
-    /// the first time it is needed.
+    /// Expensive preprocessing (push distances, dead squares, tunnels) is
+    /// computed lazily the first time it is needed.
     pub fn new(map: Map, strategy: Strategy) -> Self {
         Self {
             map,
             strategy,
             fast_weight: 2.0,
             tunnel_macros: false,
-            lower_bounds: OnceCell::new(),
-            distance_matrix: OnceCell::new(),
+            corral_pruning: false,
+            push_distances: OnceCell::new(),
             tunnels: OnceCell::new(),
+            heuristic_cache: RefCell::new(FxHashMap::default()),
             terminator: Terminator::None,
         }
     }
@@ -135,9 +194,8 @@ impl Solver {
     ///
     /// When enabled, successor generation will repeatedly push boxes through
     /// detected tunnel corridors as a single successor, reducing search depth.
-    ///
-    /// This is a performance optimization. Keep it disabled if you suspect your
-    /// tunnel detector is overly aggressive for some level sets.
+    /// Keep this off if your tunnel detector is overly aggressive for some
+    /// level set.
     pub fn with_tunnel_macros(mut self, enabled: bool) -> Self {
         self.tunnel_macros = enabled;
         self
@@ -146,6 +204,26 @@ impl Solver {
     /// Returns whether tunnel macro compression is enabled.
     pub fn tunnel_macros(&self) -> bool {
         self.tunnel_macros
+    }
+
+    /// Enables or disables the conservative PI-corral deadlock check.
+    ///
+    /// When enabled, after each push the solver checks whether the just-pushed
+    /// box ended up in a connected region the player can no longer enter and
+    /// can no longer change. Such *frozen corrals* are deadlocks if they
+    /// aren't fully solved.
+    ///
+    /// Off by default. The check costs two extra BFSes per push, which on
+    /// easy levels outweighs the pruning benefit. Enable it for hard levels
+    /// where the search would otherwise blow up.
+    pub fn with_corral_pruning(mut self, enabled: bool) -> Self {
+        self.corral_pruning = enabled;
+        self
+    }
+
+    /// Returns whether corral pruning is enabled.
+    pub fn corral_pruning(&self) -> bool {
+        self.corral_pruning
     }
 
     /// Sets the terminator for the solver.
@@ -157,11 +235,22 @@ impl Solver {
     /// Sets the weight used by `Strategy::Fast` (weighted A*).
     ///
     /// `weight = 1.0` behaves like optimal A* in push space.
-    /// Larger values tend to find solutions faster but may sacrifice optimality.
+    /// Larger values tend to find solutions faster but may sacrifice
+    /// optimality. Non-finite weights (NaN, ±INFINITY) and weights below
+    /// 1.0 are clamped to 1.0; weights above [`Self::MAX_FAST_WEIGHT`] are
+    /// clamped to that ceiling so the priority computation stays in i32 range.
     pub fn with_fast_weight(mut self, weight: f32) -> Self {
-        self.fast_weight = weight.max(1.0);
+        self.fast_weight = if weight.is_nan() || weight < 1.0 {
+            1.0
+        } else {
+            weight.min(Self::MAX_FAST_WEIGHT)
+        };
         self
     }
+
+    /// Upper clamp for [`Self::with_fast_weight`]. Keeps `pushes + w*h` in
+    /// i32 range for any plausible heuristic value.
+    pub const MAX_FAST_WEIGHT: f32 = 1e6;
 
     /// Returns the terminator.
     pub fn terminator(&self) -> Terminator {
@@ -182,40 +271,142 @@ impl Solver {
     pub fn fast_weight(&self) -> f32 {
         self.fast_weight
     }
+}
 
-    /// Returns the appropriate state key based on the search strategy.
-    ///
-    /// - `OptimalMove` uses exact player position.
-    /// - `OptimalPush` and `Fast` normalize player position within its reachable region.
-    pub fn state_key(&self, state: &State) -> u64 {
-        match self.strategy {
-            Strategy::OptimalMove => state.key_move(),
-            Strategy::OptimalPush | Strategy::Fast => state.key_push_canonical(),
-        }
+// =====================================================================
+// Heuristic cache (used by `State::heuristic` through `&Solver`).
+// =====================================================================
+
+impl Solver {
+    /// Returns the cached heuristic for `boxes`, if any.
+    pub(crate) fn cached_heuristic(&self, boxes: &BoxSet) -> Option<i32> {
+        self.heuristic_cache.borrow().get(boxes).copied()
     }
 
-    /// Searches for solution using A* / weighted A* depending on the strategy.
+    /// Records `h` as the heuristic for `boxes` in the per-solver cache.
     ///
-    /// This implementation maintains a best-known `g` score for each state key, allowing
-    /// it to **reopen states** when a cheaper path is found. This is required for
-    /// correctness for non-uniform costs (move-optimal search) and is still helpful for
-    /// push-optimal search.
+    /// The cache is hard-capped at [`HEURISTIC_CACHE_LIMIT`] entries. Once
+    /// full it is cleared rather than evicted entry-by-entry — losing some
+    /// hits is acceptable, but unbounded growth on hard searches is not.
+    pub(crate) fn cache_heuristic(&self, boxes: BoxSet, h: i32) {
+        let mut cache = self.heuristic_cache.borrow_mut();
+        if cache.len() >= HEURISTIC_CACHE_LIMIT {
+            cache.clear();
+        }
+        cache.insert(boxes, h);
+    }
+}
+
+// =====================================================================
+// Lazy preprocessing accessors.
+// =====================================================================
+
+impl Solver {
+    /// Returns lower bounds (dead-square / min-to-any-goal) computed from push
+    /// distances.
+    pub fn lower_bounds(&self) -> &FxHashMap<IVector2, i32> {
+        &self.push_distances().0
+    }
+
+    /// Returns the push distance matrix used by the matching heuristic.
+    pub fn distance_matrix(&self) -> &FxHashMap<IVector2, FxHashMap<IVector2, i32>> {
+        &self.push_distances().1
+    }
+
+    /// Returns the cached `(lower_bounds, distance_matrix)` pair, computing it
+    /// on first access. Both halves come from a single pass of
+    /// [`preprocess::compute_push_distances`] so the BFS work runs once.
+    fn push_distances(
+        &self,
+    ) -> &(
+        FxHashMap<IVector2, i32>,
+        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
+    ) {
+        self.push_distances
+            .get_or_init(|| preprocess::compute_push_distances(&self.map))
+    }
+
+    /// Returns the tunnel macro table.
+    pub fn tunnels(&self) -> &FxHashSet<(IVector2, Direction)> {
+        self.tunnels
+            .get_or_init(|| preprocess::compute_tunnels(&self.map, self.lower_bounds()))
+    }
+
+    /// Returns whether `(box_pos, dir)` is a tunnel macro step.
+    pub fn is_tunnel(&self, box_pos: IVector2, dir: Direction) -> bool {
+        self.tunnels().contains(&(box_pos, dir))
+    }
+
+    /// Canonicalizes `state` and returns a transposition-table key for it.
+    ///
+    /// Push-space strategies normalize the player position before keying so
+    /// that two states with the player in different cells of the same
+    /// reachable region are treated as the same state. Move-optimal search
+    /// keeps the exact player position, since walking distance from there
+    /// affects future move cost.
+    ///
+    /// The returned key caches a 64-bit hash for fast hash-map lookups
+    /// while comparing the full state on equality, so it is safe against
+    /// birthday-bound hash collisions.
+    fn canonical_key(&self, state: &State) -> StateKey {
+        let mut s = state.clone();
+        if self.strategy != Strategy::OptimalMove {
+            s.normalize(&self.map);
+        }
+        StateKey::new(s)
+    }
+}
+
+// =====================================================================
+// Search loops.
+// =====================================================================
+
+impl Solver {
+    /// Searches for a solution using A* / weighted A* depending on the
+    /// strategy. Returns the player's [`Actions`] sequence on success.
+    ///
+    /// # How it works
+    ///
+    /// This is the standard A* main loop:
+    ///
+    /// 1. A `BinaryHeap` open-list keyed on `f = g + w·h`, where `g` is the
+    ///    cost-to-come (pushes / moves / 0 depending on the [`Strategy`]) and
+    ///    `h` is the bipartite-matching heuristic.
+    /// 2. A `best_g` transposition table keyed on a collision-safe canonical
+    ///    state key, so already-better-explored states are skipped.
+    /// 3. **Reopening** — when a cheaper path to a known state is found, the
+    ///    state is requeued. Reopening is required for correctness with
+    ///    non-uniform edge costs (move-optimal search) and is still useful in
+    ///    push-optimal search even though edges are unit-cost.
+    /// 4. On goal pop, the parent chain is walked back to the start and
+    ///    forward-simulated with [`crate::path_finding::find_path`] to emit a
+    ///    valid `Move`/`Push` sequence.
+    ///
+    /// # Memory
+    ///
+    /// Both `best_g` and `parent` grow with the number of distinct states
+    /// expanded — potentially hundreds of MB to several GB on hard levels.
+    /// If memory matters more than time, use [`Solver::ida_star_search`].
+    ///
+    /// # Errors
+    ///
+    /// - [`SearchError::NoSolution`] — the level is unsolvable (or unsolvable
+    ///   under the configured [`Strategy`]).
+    /// - [`SearchError::Terminated`] — the configured [`Terminator`]'s
+    ///   wall-clock or iteration budget was exhausted.
     pub fn a_star_search(&self) -> Result<Actions, SearchError> {
         let mut heap = BinaryHeap::new();
 
-        // best known cost-to-come g(key)
-        let mut best_g: HashMap<u64, i32> = HashMap::new();
-
-        // Parent pointers and state storage for path reconstruction.
-        let mut parent: HashMap<u64, u64> = HashMap::new();
-        let mut states: HashMap<u64, State> = HashMap::new();
+        // Best known cost-to-come g(key). The key carries the full canonical
+        // state, so collisions are impossible.
+        let mut best_g: FxHashMap<StateKey, i32> = FxHashMap::default();
+        let mut parent: FxHashMap<StateKey, StateKey> = FxHashMap::default();
 
         let start: State = self.map.clone().into();
         let start_node = Node::new(start, 0, 0, self);
-        best_g.insert(start_node.key, 0);
-        // Store the canonical state representation that corresponds to this key.
-        states.insert(start_node.key, start_node.state.clone());
+        let start_key = StateKey::new(start_node.state.clone());
 
+        best_g.insert(start_key, 0);
         heap.push(start_node);
 
         let mut terminator = TerminatorInner::new(self.terminator);
@@ -226,27 +417,31 @@ impl Solver {
             }
 
             let g_here = self.node_g(&node);
+            let node_key = StateKey::new(node.state.clone());
 
-            // stale check: skip if this node is no longer the best known path to its key
-            if best_g.get(&node.key).copied() != Some(g_here) {
+            // Stale: another path to this state was found cheaper after we
+            // queued this node. Skip — we'll process the cheaper path's copy.
+            if best_g.get(&node_key).copied() != Some(g_here) {
                 continue;
             }
 
             if node.state.is_solved(self) {
-                return Ok(self.construct_actions_from_keys(node.key, &parent, &states));
+                return Ok(reconstruct::actions_from_chain(
+                    &self.map, &node_key, &parent,
+                ));
             }
 
             for succ in node.successors(self) {
                 let g_succ = self.node_g(&succ);
-                let old = best_g.get(&succ.key).copied().unwrap_or(i32::MAX);
+                let succ_key = StateKey::new(succ.state.clone());
+                let old = best_g.get(&succ_key).copied().unwrap_or(i32::MAX);
 
                 if g_succ >= old {
                     continue;
                 }
 
-                best_g.insert(succ.key, g_succ);
-                parent.insert(succ.key, node.key);
-                states.insert(succ.key, succ.state.clone());
+                best_g.insert(succ_key.clone(), g_succ);
+                parent.insert(succ_key, node_key.clone());
                 heap.push(succ);
             }
         }
@@ -254,29 +449,44 @@ impl Solver {
         Err(SearchError::NoSolution)
     }
 
-    /// Returns the cost-to-come `g` for a node based on the active strategy.
-    fn node_g(&self, node: &Node) -> i32 {
-        match self.strategy {
-            Strategy::OptimalMove => node.moves,
-            Strategy::OptimalPush | Strategy::Fast => node.pushes,
-        }
-    }
     /// Solves the Sokoban level using **IDA\*** (Iterative Deepening A*).
+    /// Returns only `Ok(())` on success — no action sequence.
     ///
-    /// IDA* performs repeated depth-first searches with increasing `f = g + h`
-    /// thresholds. It can be significantly more memory-efficient than A* but
-    /// typically expands more nodes.
+    /// # How it works
+    ///
+    /// IDA* performs repeated depth-first searches with monotonically
+    /// increasing `f = g + h` thresholds:
+    ///
+    /// 1. Start with `threshold = h(start)`.
+    /// 2. DFS from the start state, pruning any node whose `f` exceeds the
+    ///    threshold and remembering the smallest `f` that was pruned.
+    /// 3. If the DFS hits a goal, return `Found`. Otherwise raise the threshold
+    ///    to the smallest pruned `f` and DFS again.
+    ///
+    /// Cycle checking is **path-based**: a state is added to a `visited` set
+    /// on entry and removed on return, so only ancestors on the current DFS
+    /// path are considered "seen." There is no global transposition table —
+    /// that's the trade that buys IDA*'s low memory cost.
+    ///
+    /// # Memory vs time
+    ///
+    /// IDA* uses memory proportional to the solution depth (typically a few
+    /// hundred bytes), which is dramatically less than A*. The cost is that
+    /// states are re-expanded across iterations — IDA* is usually noticeably
+    /// slower wall-clock than [`Solver::a_star_search`] on the same level.
     ///
     /// # Cost model
     ///
-    /// * `OptimalPush` / `Fast`: `g = pushes`
-    /// * `OptimalMove`: `g = moves` (usually much slower)
+    /// - `OptimalPush` / `Fast`: `g = pushes`.
+    /// - `OptimalMove`: `g = moves`. Much slower because the search space is
+    ///   bigger (player position matters).
+    /// - `Greedy`: `g = 0`, so `f = h`. Well-defined but converges poorly under
+    ///   iterative deepening — prefer [`Solver::a_star_search`] for greedy.
     ///
-    /// # Returns
+    /// # Errors
     ///
-    /// * `Ok(())` if a solution is found.
-    /// * `Err(SearchError::NoSolution)` if no solution exists.
-    /// * `Err(SearchError::Terminated)` if the terminator triggers.
+    /// - [`SearchError::NoSolution`] — exhausted all reachable thresholds.
+    /// - [`SearchError::Terminated`] — the [`Terminator`] budget triggered.
     pub fn ida_star_search(&self) -> Result<(), SearchError> {
         let start: State = self.map.clone().into();
         let h0 = start.heuristic(self);
@@ -288,7 +498,7 @@ impl Solver {
         let mut terminator = TerminatorInner::new(self.terminator);
 
         loop {
-            let mut visited: HashSet<u64> = HashSet::new();
+            let mut visited: FxHashSet<StateKey> = FxHashSet::default();
 
             match self.ida_dfs(&start, 0, 0, threshold, &mut visited, &mut terminator) {
                 IdaDfsResult::Found => return Ok(()),
@@ -305,15 +515,16 @@ impl Solver {
 
     /// Performs one IDA* depth-first search iteration for a given `threshold`.
     ///
-    /// This function uses **path-based** cycle checking via `visited`:
-    /// it inserts the current state's key on entry and removes it on return.
+    /// Uses **path-based** cycle checking via `visited`: the current state's
+    /// key is inserted on entry and removed on return, so only ancestors on
+    /// the current DFS path are considered "seen."
     fn ida_dfs(
         &self,
         state: &State,
         pushes: i32,
         moves: i32,
         threshold: i32,
-        visited: &mut HashSet<u64>,
+        visited: &mut FxHashSet<StateKey>,
         terminator: &mut TerminatorInner,
     ) -> IdaDfsResult {
         if terminator.tick() {
@@ -328,6 +539,10 @@ impl Solver {
         let g = match self.strategy {
             Strategy::OptimalMove => moves,
             Strategy::OptimalPush | Strategy::Fast => pushes,
+            // Greedy in IDA* is unusual but well-defined: f = h, so
+            // thresholds iterate on heuristic values. Convergence is poor
+            // — prefer `a_star_search` for greedy.
+            Strategy::Greedy => 0,
         };
         let f = g.saturating_add(h);
 
@@ -338,8 +553,8 @@ impl Solver {
             return IdaDfsResult::Found;
         }
 
-        let key = self.state_key(state);
-        if !visited.insert(key) {
+        let key = self.canonical_key(state);
+        if !visited.insert(key.clone()) {
             // Cycle on the current DFS path; ignore.
             return IdaDfsResult::NextThreshold(i32::MAX);
         }
@@ -376,254 +591,15 @@ impl Solver {
         IdaDfsResult::NextThreshold(min_next)
     }
 
-    /// Returns lower bounds (dead-square / min-to-any-goal) computed from push distances.
-    pub fn lower_bounds(&self) -> &HashMap<IVector2, i32> {
-        self.lower_bounds
-            .get_or_init(|| self.precompute_push_distances().0)
-    }
-
-    /// Returns the push distance matrix used by the matching heuristic.
-    pub fn distance_matrix(&self) -> &HashMap<IVector2, HashMap<IVector2, i32>> {
-        self.distance_matrix
-            .get_or_init(|| self.precompute_push_distances().1)
-    }
-
-    /// Returns tunnel macro table.
-    pub fn tunnels(&self) -> &HashSet<(IVector2, Direction)> {
-        self.tunnels.get_or_init(|| self.calculate_tunnels())
-    }
-
-    /// Returns whether `(box_pos, dir)` is a tunnel macro step.
-    pub fn is_tunnel(&self, box_pos: IVector2, dir: Direction) -> bool {
-        self.tunnels().contains(&(box_pos, dir))
-    }
-
-    /// Precomputes push distances in an admissible abstraction.
-    ///
-    /// Builds the *push graph* for a box on an empty board:
-    /// a box can move from `prev` to `cur = prev + dir` iff:
-    /// - `prev` is not a wall
-    /// - `cur` is not a wall
-    /// - `prev - dir` is not a wall (player can stand behind)
-    ///
-    /// Distances are computed by reverse BFS from each goal.
-    fn precompute_push_distances(
-        &self,
-    ) -> (
-        HashMap<IVector2, i32>,
-        HashMap<IVector2, HashMap<IVector2, i32>>,
-    ) {
-        let is_free =
-            |p: IVector2| -> bool { self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall) };
-
-        let mut distance_matrix: HashMap<IVector2, HashMap<IVector2, i32>> = HashMap::new();
-
-        for &goal in self.map.goal_positions().iter() {
-            if !is_free(goal) {
-                continue;
-            }
-
-            let mut dist_to_goal: HashMap<IVector2, i32> = HashMap::new();
-            let mut q = VecDeque::new();
-
-            dist_to_goal.insert(goal, 0);
-            q.push_back(goal);
-
-            while let Some(cur) = q.pop_front() {
-                let dcur = dist_to_goal[&cur];
-
-                // reverse edges: predecessor prev such that prev + dir = cur
-                for dir in Direction::iter() {
-                    let prev = cur - &dir.into();
-                    let behind = prev - &dir.into();
-
-                    if !is_free(prev) || !is_free(behind) {
-                        continue;
-                    }
-                    if dist_to_goal.contains_key(&prev) {
-                        continue;
-                    }
-
-                    dist_to_goal.insert(prev, dcur + 1);
-                    q.push_back(prev);
-                }
-            }
-
-            for (pos, d) in dist_to_goal {
-                distance_matrix
-                    .entry(pos)
-                    .or_insert_with(HashMap::new)
-                    .insert(goal, d);
-            }
+    /// Returns the cost-to-come `g` for a node based on the active strategy.
+    fn node_g(&self, node: &Node) -> i32 {
+        match self.strategy {
+            Strategy::OptimalMove => node.moves,
+            Strategy::OptimalPush | Strategy::Fast => node.pushes,
+            // Greedy ignores g; using a constant turns the reopen check into
+            // visited-once semantics (g_succ = 0 is never strictly less than
+            // the recorded 0, so a state is processed only the first time).
+            Strategy::Greedy => 0,
         }
-
-        // lower_bounds[pos] = min distance to any goal
-        let mut lower_bounds: HashMap<IVector2, i32> = HashMap::new();
-        for (pos, gm) in &distance_matrix {
-            if let Some(best) = gm.values().min().copied() {
-                lower_bounds.insert(*pos, best);
-            }
-        }
-
-        (lower_bounds, distance_matrix)
-    }
-
-    /// Detects static tunnel corridors for macro pushes.
-    ///
-    /// This is a conservative detector keyed by `(box_pos, dir)`:
-    /// if a box at `box_pos` is pushed in `dir` and the corridor walls force
-    /// the continuation, we mark that step as a tunnel macro.
-    fn calculate_tunnels(&self) -> HashSet<(IVector2, Direction)> {
-        let mut tunnels = HashSet::new();
-
-        let is_free =
-            |p: IVector2| -> bool { self.map.in_bounds(p) && !self.map[p].intersects(Tiles::Wall) };
-
-        for x in 0..self.map.dimensions().x {
-            for y in 0..self.map.dimensions().y {
-                let p = IVector2::new(x, y);
-                if !is_free(p) || self.map[p].intersects(Tiles::Goal) {
-                    continue;
-                }
-
-                for dir in Direction::iter() {
-                    let forward = p + &dir.into();
-                    if !is_free(forward) || self.map[forward].intersects(Tiles::Goal) {
-                        continue;
-                    }
-
-                    let (l, r) = dir.perpendiculars();
-                    let lp = p + &l.into();
-                    let rp = p + &r.into();
-                    if !self.map.in_bounds(lp)
-                        || !self.map.in_bounds(rp)
-                        || !self.map[lp].intersects(Tiles::Wall)
-                        || !self.map[rp].intersects(Tiles::Wall)
-                    {
-                        continue;
-                    }
-
-                    // also require the forward cell is corridor-like
-                    let flp = forward + &l.into();
-                    let frp = forward + &r.into();
-                    if !self.map.in_bounds(flp)
-                        || !self.map.in_bounds(frp)
-                        || !self.map[flp].intersects(Tiles::Wall)
-                        || !self.map[frp].intersects(Tiles::Wall)
-                    {
-                        continue;
-                    }
-
-                    // Only mark as tunnel if the abstraction says forward isn't a dead square
-                    // (avoid macro into unreachable corridors).
-                    if !self.lower_bounds().contains_key(&forward) {
-                        continue;
-                    }
-
-                    tunnels.insert((forward, dir));
-                }
-            }
-        }
-
-        tunnels
-    }
-
-    /// Reconstructs the action sequence from a solved state key.
-    fn construct_actions_from_keys(
-        &self,
-        goal_key: u64,
-        parent: &HashMap<u64, u64>,
-        states: &HashMap<u64, State>,
-    ) -> Actions {
-        // IMPORTANT:
-        // For push-space strategies we canonicalize the player position within its
-        // reachable region. This is correct for pruning/search, but it means
-        // `State.player_position` is not necessarily the player position that would
-        // result from executing the reconstructed move sequence.
-        //
-        // To guarantee validity, we reconstruct *push intentions* from the parent chain,
-        // then simulate forward from the real initial state, re-pathfinding before each
-        // push using the current simulated player position and box configuration.
-
-        // 1) Build key chain from start -> goal.
-        let mut chain: Vec<u64> = vec![goal_key];
-        let mut k = goal_key;
-        while let Some(&pk) = parent.get(&k) {
-            chain.push(pk);
-            k = pk;
-        }
-        chain.reverse();
-
-        // 2) Convert state transitions into push steps.
-        #[derive(Clone, Copy, Debug)]
-        struct PushStep {
-            from: IVector2,
-            dir: Direction,
-            count: i32,
-        }
-
-        let mut steps: Vec<PushStep> = Vec::with_capacity(chain.len().saturating_sub(1));
-        for win in chain.windows(2) {
-            let prev = states.get(&win[0]).expect("missing prev state");
-            let cur = states.get(&win[1]).expect("missing cur state");
-
-            let prev_box = prev
-                .box_positions
-                .difference(&cur.box_positions)
-                .next()
-                .expect("no removed box");
-            let cur_box = cur
-                .box_positions
-                .difference(&prev.box_positions)
-                .next()
-                .expect("no added box");
-
-            let diff = cur_box - prev_box;
-            let dir = Direction::try_from(IVector2::new(diff.x.signum(), diff.y.signum()))
-                .expect("non-axis-aligned displacement");
-            let count = diff.x.abs() + diff.y.abs();
-            debug_assert!(count >= 1);
-
-            steps.push(PushStep {
-                from: prev_box,
-                dir,
-                count,
-            });
-        }
-
-        // 3) Simulate forward from the actual initial state.
-        let mut actions = Actions::new();
-        let mut sim_state: State = self.map.clone().into();
-
-        for step in steps {
-            let mut box_pos = step.from;
-            for _ in 0..step.count {
-                let behind = box_pos - &step.dir.into();
-
-                let path = find_path(sim_state.player_position, behind, |p| {
-                    !self.map[p].intersects(Tiles::Wall) && !sim_state.box_positions.contains(&p)
-                })
-                .expect("no path to behind-square during reconstruction");
-
-                for w in path.windows(2) {
-                    let d = Direction::try_from(w[1] - w[0]).unwrap();
-                    actions.push(Action::Move(d));
-                }
-
-                actions.push(Action::Push(step.dir));
-
-                let new_box = box_pos + &step.dir.into();
-                debug_assert!(!self.map[new_box].intersects(Tiles::Wall));
-                debug_assert!(!sim_state.box_positions.contains(&new_box));
-                debug_assert!(sim_state.box_positions.contains(&box_pos));
-
-                sim_state.box_positions.remove(box_pos);
-                sim_state.box_positions.insert(new_box);
-                sim_state.player_position = box_pos;
-                box_pos = new_box;
-            }
-        }
-
-        actions
     }
 }
