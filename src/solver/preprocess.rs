@@ -23,8 +23,8 @@ use crate::{direction::Direction, map::Map, math::IVector2, Tiles};
 /// Returns `(lower_bounds, distance_matrix)` where:
 ///
 /// - `lower_bounds[pos]` is the minimum push distance from `pos` to any goal
-///   (cells absent from this map have no path to any goal — i.e. they are
-///   dead squares for placing a box).
+///   (cells absent from this map have no path to any goal — i.e. they are dead
+///   squares for placing a box).
 /// - `distance_matrix[pos][goal]` is the minimum push distance from `pos` to
 ///   that specific `goal`. Used by the bipartite-matching heuristic.
 pub(super) fn compute_push_distances(
@@ -33,11 +33,9 @@ pub(super) fn compute_push_distances(
     FxHashMap<IVector2, i32>,
     FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
 ) {
-    let is_free =
-        |p: IVector2| -> bool { map.in_bounds(p) && !map[p].intersects(Tiles::Wall) };
+    let is_free = |p: IVector2| -> bool { map.in_bounds(p) && !map[p].intersects(Tiles::Wall) };
 
-    let mut distance_matrix: FxHashMap<IVector2, FxHashMap<IVector2, i32>> =
-        FxHashMap::default();
+    let mut distance_matrix: FxHashMap<IVector2, FxHashMap<IVector2, i32>> = FxHashMap::default();
 
     for &goal in map.goal_positions().iter() {
         if !is_free(goal) {
@@ -94,15 +92,15 @@ pub(super) fn compute_push_distances(
 /// Returns the set of `(box_position, push_direction)` pairs that should be
 /// followed by an automatic next push. The detector is conservative: it only
 /// marks a step as a tunnel if the destination is reachable in the abstraction
-/// (i.e. present in `lower_bounds`), avoiding macros into unreachable corridors.
+/// (i.e. present in `lower_bounds`), avoiding macros into unreachable
+/// corridors.
 pub(super) fn compute_tunnels(
     map: &Map,
     lower_bounds: &FxHashMap<IVector2, i32>,
 ) -> FxHashSet<(IVector2, Direction)> {
     let mut tunnels = FxHashSet::default();
 
-    let is_free =
-        |p: IVector2| -> bool { map.in_bounds(p) && !map[p].intersects(Tiles::Wall) };
+    let is_free = |p: IVector2| -> bool { map.in_bounds(p) && !map[p].intersects(Tiles::Wall) };
 
     for x in 0..map.dimensions().x {
         for y in 0..map.dimensions().y {
@@ -128,7 +126,8 @@ pub(super) fn compute_tunnels(
                     continue;
                 }
 
-                // The forward cell must also be corridor-like (walls on both perpendicular sides).
+                // The forward cell must also be corridor-like (walls on both perpendicular
+                // sides).
                 let flp = forward + &l.into();
                 let frp = forward + &r.into();
                 if !map.in_bounds(flp)

@@ -26,10 +26,10 @@ pub enum Strategy {
     /// Weighted A* in push space — the default.
     ///
     /// Each state's priority is `pushes + w · h(state)`, where `w` defaults
-    /// to `2.0` and is configurable via [`crate::solver::Solver::with_fast_weight`].
-    /// Larger `w` makes the search more goal-directed: it prefers states
-    /// whose lower-bound estimate looks small, even at the cost of a longer
-    /// path so far.
+    /// to `2.0` and is configurable via
+    /// [`crate::solver::Solver::with_fast_weight`]. Larger `w` makes the
+    /// search more goal-directed: it prefers states whose lower-bound
+    /// estimate looks small, even at the cost of a longer path so far.
     ///
     /// `w = 1.0` collapses to [`OptimalPush`]. `w = ∞` would collapse to
     /// [`Greedy`].
@@ -138,12 +138,14 @@ pub enum Terminator {
 }
 
 impl Terminator {
-    /// Creates a new `Terminator` that terminates after the specified number of iterations.
+    /// Creates a new `Terminator` that terminates after the specified number of
+    /// iterations.
     pub fn new_iterations(max_iterations: u64) -> Self {
         Self::Iterations(max_iterations)
     }
 
-    /// Creates a new `Terminator` that terminates after the specified number of seconds.
+    /// Creates a new `Terminator` that terminates after the specified number of
+    /// seconds.
     pub fn new_duration_secs(secs: u64) -> Self {
         Self::Timeout(Duration::from_secs(secs))
     }
@@ -166,7 +168,8 @@ impl TerminatorInner {
         }
     }
 
-    /// Increments the iteration counter and returns `true` if the budget is exhausted.
+    /// Increments the iteration counter and returns `true` if the budget is
+    /// exhausted.
     pub(super) fn tick(&mut self) -> bool {
         self.iterations += 1;
         match self.terminator {

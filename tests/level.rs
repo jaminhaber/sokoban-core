@@ -1,7 +1,9 @@
 use std::{fs, str::FromStr};
 
 use indoc::indoc;
-use sokoban_core::{direction::Direction, ActionError, IVector2, Level, ParseLevelError, ParseMapError};
+use sokoban_core::{
+    direction::Direction, ActionError, IVector2, Level, ParseLevelError, ParseMapError,
+};
 
 mod utils;
 use utils::*;
@@ -172,7 +174,10 @@ fn create_level_with_rle_xsb() {
 fn do_action_blocked_by_wall_returns_move_blocked() {
     let mut level = Level::from_str(SIMPLEST).unwrap();
     // Player is at column 1 (next to the left wall) — moving Left hits a wall.
-    assert_eq!(level.do_action(Direction::Left), Err(ActionError::MoveBlocked));
+    assert_eq!(
+        level.do_action(Direction::Left),
+        Err(ActionError::MoveBlocked)
+    );
 }
 
 /// `do_action` errors when a push is blocked by a wall behind the box.
@@ -186,7 +191,10 @@ fn do_action_blocked_push_returns_push_blocked() {
         ######
     "#;
     let mut level = Level::from_str(xsb).unwrap();
-    assert_eq!(level.do_action(Direction::Right), Err(ActionError::PushBlocked));
+    assert_eq!(
+        level.do_action(Direction::Right),
+        Err(ActionError::PushBlocked)
+    );
 }
 
 #[test]

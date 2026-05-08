@@ -265,7 +265,9 @@ fn normalize() {
 
 #[test]
 fn can_move_treats_walls_and_boxes_as_blocked() {
-    let map = load_level_from_file("assets/Microban_155.xsb", 1).map().clone();
+    let map = load_level_from_file("assets/Microban_155.xsb", 1)
+        .map()
+        .clone();
     // The player position itself is reachable.
     assert!(map.can_move(map.player_position()));
     // Box positions are not reachable for the player to step onto.

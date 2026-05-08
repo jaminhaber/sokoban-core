@@ -13,10 +13,11 @@
 //! SOKOBAN_TIMEOUT_MS=10000 cargo test --release --test coverage -- --ignored --nocapture
 //! ```
 //!
-//! Every solution returned by the solver is replayed through `Level::do_actions`
-//! and the resulting `Level::is_solved()` must be true. A wrong solution fails
-//! the test immediately — solver timeouts and "no solution" verdicts are
-//! tallied but do not fail the test (they are baseline measurements).
+//! Every solution returned by the solver is replayed through
+//! `Level::do_actions` and the resulting `Level::is_solved()` must be true. A
+//! wrong solution fails the test immediately — solver timeouts and "no
+//! solution" verdicts are tallied but do not fail the test (they are baseline
+//! measurements).
 
 use std::{
     fs,

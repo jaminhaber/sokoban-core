@@ -17,7 +17,6 @@ use super::reachability::reachable_area;
 
 /// Calculates the waypoints for a box to move from its current position to
 /// every position it can reach via legal pushes.
-//
 // TODO:
 // 1. Make this generic over the cost metric so callers can prefer move-count
 //    over push-count when finding "best" box paths.
@@ -28,7 +27,8 @@ use super::reachability::reachable_area;
 //      but doesn't yield concrete paths, so it can't be used for move-optimal
 //      pathfinding. Reference: <http://sokoban.ws/blog/?p=843>
 //    - Use `find_path` and seed each new search with the previous search's
-//      endpoint — the Manhattan heuristic stays small and most calls are faster.
+//      endpoint — the Manhattan heuristic stays small and most calls are
+//      faster.
 //    - Maintain the player-reachable area incrementally across iterations.
 pub fn box_move_waypoints(
     map: &Map,

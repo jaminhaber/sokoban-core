@@ -2,8 +2,10 @@
 //! independent of the player's position.
 //!
 //! These functions identify cells that are "dead" in the abstract sense:
-//!   - Floor cells that, if a box were placed on them, would be permanently stuck.
-//!   - Floor cells that the player can never usefully visit (single-exit dead ends).
+//!   - Floor cells that, if a box were placed on them, would be permanently
+//!     stuck.
+//!   - Floor cells that the player can never usefully visit (single-exit dead
+//!     ends).
 //!
 //! Used during map normalization (collapsing unreachable corridors into walls)
 //! and as a complement to runtime deadlock checks.

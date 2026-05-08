@@ -36,8 +36,9 @@ impl State {
     ///
     /// This is much tighter than summing each box's nearest-goal distance —
     /// the matching enforces the one-to-one assignment constraint. If no
-    /// perfect matching exists (some box can't reach any goal in the abstraction),
-    /// returns `i32::MAX` to mark the state as a provable dead end.
+    /// perfect matching exists (some box can't reach any goal in the
+    /// abstraction), returns `i32::MAX` to mark the state as a provable
+    /// dead end.
     ///
     /// The result is cached by box configuration on the solver, since the
     /// matching depends only on box positions and many states share the same
@@ -71,9 +72,7 @@ impl State {
         for (i, b) in boxes.iter().enumerate() {
             let row = dm.get(b);
             for (j, g) in goals.iter().enumerate() {
-                cost[i * n + j] = row
-                    .and_then(|m| m.get(g).copied())
-                    .unwrap_or(i32::MAX);
+                cost[i * n + j] = row.and_then(|m| m.get(g).copied()).unwrap_or(i32::MAX);
             }
         }
 
@@ -211,5 +210,3 @@ mod tests {
         assert_eq!(map.get(&lookup), Some(&42));
     }
 }
-
-

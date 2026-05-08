@@ -31,14 +31,16 @@ pub struct Node {
     pub state: State,
     /// Number of pushes taken to reach this node.
     pub pushes: i32,
-    /// Number of player moves (including pushes as 1 move) taken to reach this node.
+    /// Number of player moves (including pushes as 1 move) taken to reach this
+    /// node.
     pub moves: i32,
     /// A strategy-dependent priority value for the open list.
     pub priority: i32,
 }
 
 impl Node {
-    /// Creates a new `Node` and computes its priority according to the solver strategy.
+    /// Creates a new `Node` and computes its priority according to the solver
+    /// strategy.
     ///
     /// - `Fast` uses weighted A* in push space.
     /// - `OptimalPush` uses `pushes + h`.
@@ -87,7 +89,8 @@ impl Node {
     /// 3. Destination is not a dead square in the push-distance abstraction.
     /// 4. Resulting configuration does not introduce a freeze deadlock.
     ///
-    /// Tunnel macros are applied as forced sequences of pushes through corridors.
+    /// Tunnel macros are applied as forced sequences of pushes through
+    /// corridors.
     pub fn successors(&self, solver: &Solver) -> Successors {
         let mut successors: Successors = SmallVec::new();
 
@@ -99,7 +102,9 @@ impl Node {
         for box_position in &self.state.box_positions {
             for push_direction in Direction::iter() {
                 let behind = box_position - &push_direction.into();
-                let Some(&d_behind) = dist.get(&behind) else { continue };
+                let Some(&d_behind) = dist.get(&behind) else {
+                    continue;
+                };
 
                 let mut new_box_position = box_position + &push_direction.into();
 
@@ -121,9 +126,7 @@ impl Node {
                 let mut new_moves = self.moves + d_behind + 1; // walk behind + push
 
                 // Tunnel macro: optionally compress forced corridor segments.
-                while solver.tunnel_macros()
-                    && solver.is_tunnel(new_box_position, push_direction)
-                {
+                while solver.tunnel_macros() && solver.is_tunnel(new_box_position, push_direction) {
                     let next = new_box_position + &push_direction.into();
                     if !solver.map().in_bounds(next)
                         || solver.map()[next].intersects(Tiles::Wall)

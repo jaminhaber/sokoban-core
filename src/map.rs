@@ -453,10 +453,8 @@ impl Map {
         self.data = transformed_map.data;
         self.dimensions = transformed_map.dimensions;
         self.player_position = operation(self.player_position);
-        self.box_positions = BoxSet::from_iter(
-            new_dimensions.x,
-            self.box_positions.iter().map(operation),
-        );
+        self.box_positions =
+            BoxSet::from_iter(new_dimensions.x, self.box_positions.iter().map(operation));
         self.goal_positions = self.goal_positions.iter().copied().map(operation).collect();
     }
 
@@ -634,7 +632,6 @@ impl fmt::Display for Map {
         Ok(())
     }
 }
-
 
 fn calculate_dimensions_and_player_position(actions: &Actions) -> (IVector2, IVector2) {
     let mut min_position = IVector2::zeros();

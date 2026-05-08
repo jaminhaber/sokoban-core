@@ -112,7 +112,9 @@ fn optimal_push_matches_known_minimum() {
     // BoxWorld #3 is small enough that Fast finds a near-optimal solution
     // and OptimalPush finds *the* push-optimal one. The optimum should be
     // no worse than what Fast gets.
-    let map = load_level_from_file("assets/BoxWorld_100.xsb", 3).map().clone();
+    let map = load_level_from_file("assets/BoxWorld_100.xsb", 3)
+        .map()
+        .clone();
 
     let fast = Solver::new(map.clone(), Strategy::Fast)
         .a_star_search()
@@ -160,7 +162,9 @@ fn optimal_move_yields_no_more_moves_than_fast() {
     level_fast
         .do_actions(fast.iter().map(|a| a.direction()))
         .unwrap();
-    level_opt.do_actions(opt.iter().map(|a| a.direction())).unwrap();
+    level_opt
+        .do_actions(opt.iter().map(|a| a.direction()))
+        .unwrap();
     assert!(level_fast.is_solved());
     assert!(level_opt.is_solved());
 }
@@ -169,7 +173,9 @@ fn optimal_move_yields_no_more_moves_than_fast() {
 fn fast_weight_one_is_admissible() {
     // Fast with weight 1.0 reduces to plain A* in push space, so the push
     // count must equal OptimalPush.
-    let map = load_level_from_file("assets/BoxWorld_100.xsb", 1).map().clone();
+    let map = load_level_from_file("assets/BoxWorld_100.xsb", 1)
+        .map()
+        .clone();
 
     let weighted = Solver::new(map.clone(), Strategy::Fast)
         .with_fast_weight(1.0)
@@ -275,7 +281,9 @@ fn corral_pruning_keeps_solutions_valid() {
 
 #[test]
 fn lower_bounds_includes_goals_with_distance_zero() {
-    let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
+    let map = load_level_from_file("assets/Microban_155.xsb", 3)
+        .map()
+        .clone();
     let solver = Solver::new(map.clone(), Strategy::Fast);
     let lb = solver.lower_bounds();
 
@@ -297,7 +305,9 @@ fn lower_bounds_includes_goals_with_distance_zero() {
 #[test]
 fn tunnels_table_is_consistent_with_is_tunnel() {
     // Use a level that has tunnel-like corridors so the table is non-empty.
-    let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
+    let map = load_level_from_file("assets/Microban_155.xsb", 3)
+        .map()
+        .clone();
     let solver = Solver::new(map, Strategy::Fast);
     let tunnels = solver.tunnels();
 
@@ -311,10 +321,7 @@ fn tunnels_table_is_consistent_with_is_tunnel() {
         for y in 0..solver.map().dimensions().y {
             for dir in Direction::iter() {
                 let pos = IVector2::new(x, y);
-                assert_eq!(
-                    solver.is_tunnel(pos, dir),
-                    tunnels.contains(&(pos, dir))
-                );
+                assert_eq!(solver.is_tunnel(pos, dir), tunnels.contains(&(pos, dir)));
             }
         }
     }
@@ -322,7 +329,9 @@ fn tunnels_table_is_consistent_with_is_tunnel() {
 
 #[test]
 fn distance_matrix_self_distance_is_zero() {
-    let map = load_level_from_file("assets/Microban_155.xsb", 3).map().clone();
+    let map = load_level_from_file("assets/Microban_155.xsb", 3)
+        .map()
+        .clone();
     let solver = Solver::new(map.clone(), Strategy::Fast);
     let dm = solver.distance_matrix();
 
@@ -345,17 +354,16 @@ fn search_terminator_timeout_returns_terminated() {
     use std::time::Duration;
 
     // A non-zero timeout that's too short to solve a hard level.
-    let map = load_level_from_file("assets/BoxWorld_100.xsb", 3).map().clone();
+    let map = load_level_from_file("assets/BoxWorld_100.xsb", 3)
+        .map()
+        .clone();
     let solver = Solver::new(map, Strategy::Fast)
         .with_terminator(Terminator::Timeout(Duration::from_nanos(1)));
     // Either we terminate due to the budget or — extremely unlikely — we
     // happen to succeed before checking. Both outcomes are valid; only a
     // panic would be a bug.
     let result = solver.a_star_search();
-    assert!(matches!(
-        result,
-        Err(SearchError::Terminated) | Ok(_)
-    ));
+    assert!(matches!(result, Err(SearchError::Terminated) | Ok(_)));
 }
 
 #[test]

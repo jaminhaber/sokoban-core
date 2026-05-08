@@ -11,8 +11,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::{
-    direction::Direction, map::Map, math::IVector2, path_finding::find_path, Action, Actions,
-    Tiles,
+    direction::Direction, map::Map, math::IVector2, path_finding::find_path, Action, Actions, Tiles,
 };
 
 use super::state::{State, StateKey};

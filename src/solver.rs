@@ -3,8 +3,8 @@
 //! # Quick start
 //!
 //! ```no_run
-//! use std::str::FromStr;
 //! use sokoban_core::prelude::*;
+//! use std::str::FromStr;
 //!
 //! let map = Map::from_str("#####\n#@$.#\n#####\n").unwrap();
 //! let solver = Solver::new(map, Strategy::Fast);
@@ -59,25 +59,25 @@
 //! - [`Solver::with_tunnel_macros`] — compress forced corridor pushes into a
 //!   single successor. Cuts depth on tunnel-heavy maps.
 //! - [`Solver::with_corral_pruning`] — extra conservative PI-corral deadlock
-//!   check on every push. Off by default; expensive on easy levels but
-//!   useful on hard ones.
-//! - [`Solver::with_terminator`] — bound the search by wall-clock or
-//!   iteration count.
+//!   check on every push. Off by default; expensive on easy levels but useful
+//!   on hard ones.
+//! - [`Solver::with_terminator`] — bound the search by wall-clock or iteration
+//!   count.
 //!
 //! # Module layout
 //!
 //! - This file: the [`Solver`] struct, builder methods, and the A* / IDA*
 //!   search loops that read directly from the solver's private state.
-//! - `strategy`: the [`Strategy`] and [`Terminator`] enums plus the
-//!   internal `TerminatorInner` and `IdaDfsResult` types.
-//! - `preprocess`: pure functions that compute the push-distance
-//!   abstraction (lower bounds + distance matrix) and the tunnel-macro table.
+//! - `strategy`: the [`Strategy`] and [`Terminator`] enums plus the internal
+//!   `TerminatorInner` and `IdaDfsResult` types.
+//! - `preprocess`: pure functions that compute the push-distance abstraction
+//!   (lower bounds + distance matrix) and the tunnel-macro table.
 //! - `reconstruct`: walks the parent chain of canonical states and emits a
 //!   valid player action sequence, simulating forward from the real initial
 //!   state to find walking paths between pushes.
-//! - `state` / `node`: the canonical `State` / `StateKey` types and the
-//!   search `Node` with its successor generator. Private to the solver
-//!   module — no other code in the crate touches them.
+//! - `state` / `node`: the canonical `State` / `StateKey` types and the search
+//!   `Node` with its successor generator. Private to the solver module — no
+//!   other code in the crate touches them.
 //!
 //! [`a_star_search`]: Solver::a_star_search
 
@@ -93,9 +93,7 @@ use node::Node;
 use state::{State, StateKey};
 use strategy::{IdaDfsResult, TerminatorInner};
 
-use crate::{
-    box_set::BoxSet, direction::Direction, math::IVector2, Actions, Map, SearchError,
-};
+use crate::{box_set::BoxSet, direction::Direction, math::IVector2, Actions, Map, SearchError};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     cell::{OnceCell, RefCell},
@@ -233,8 +231,8 @@ impl Solver {
     /// Sets the weight used by `Strategy::Fast` (weighted A*).
     ///
     /// `weight = 1.0` behaves like optimal A* in push space.
-    /// Larger values tend to find solutions faster but may sacrifice optimality.
-    /// Values below 1.0 are clamped to 1.0.
+    /// Larger values tend to find solutions faster but may sacrifice
+    /// optimality. Values below 1.0 are clamped to 1.0.
     pub fn with_fast_weight(mut self, weight: f32) -> Self {
         self.fast_weight = weight.max(1.0);
         self
@@ -290,7 +288,8 @@ impl Solver {
 // =====================================================================
 
 impl Solver {
-    /// Returns lower bounds (dead-square / min-to-any-goal) computed from push distances.
+    /// Returns lower bounds (dead-square / min-to-any-goal) computed from push
+    /// distances.
     pub fn lower_bounds(&self) -> &FxHashMap<IVector2, i32> {
         self.lower_bounds
             .get_or_init(|| preprocess::compute_push_distances(&self.map).0)
@@ -355,8 +354,8 @@ impl Solver {
     ///    non-uniform edge costs (move-optimal search) and is still useful in
     ///    push-optimal search even though edges are unit-cost.
     /// 4. On goal pop, the parent chain is walked back to the start and
-    ///    forward-simulated with [`crate::path_finding::find_path`] to emit
-    ///    a valid `Move`/`Push` sequence.
+    ///    forward-simulated with [`crate::path_finding::find_path`] to emit a
+    ///    valid `Move`/`Push` sequence.
     ///
     /// # Memory
     ///
@@ -366,8 +365,8 @@ impl Solver {
     ///
     /// # Errors
     ///
-    /// - [`SearchError::NoSolution`] — the level is unsolvable (or
-    ///   unsolvable under the configured [`Strategy`]).
+    /// - [`SearchError::NoSolution`] — the level is unsolvable (or unsolvable
+    ///   under the configured [`Strategy`]).
     /// - [`SearchError::Terminated`] — the configured [`Terminator`]'s
     ///   wall-clock or iteration budget was exhausted.
     pub fn a_star_search(&self) -> Result<Actions, SearchError> {
@@ -402,7 +401,9 @@ impl Solver {
             }
 
             if node.state.is_solved(self) {
-                return Ok(reconstruct::actions_from_chain(&self.map, &node_key, &parent));
+                return Ok(reconstruct::actions_from_chain(
+                    &self.map, &node_key, &parent,
+                ));
             }
 
             for succ in node.successors(self) {
@@ -434,8 +435,8 @@ impl Solver {
     /// 1. Start with `threshold = h(start)`.
     /// 2. DFS from the start state, pruning any node whose `f` exceeds the
     ///    threshold and remembering the smallest `f` that was pruned.
-    /// 3. If the DFS hits a goal, return `Found`. Otherwise raise the
-    ///    threshold to the smallest pruned `f` and DFS again.
+    /// 3. If the DFS hits a goal, return `Found`. Otherwise raise the threshold
+    ///    to the smallest pruned `f` and DFS again.
     ///
     /// Cycle checking is **path-based**: a state is added to a `visited` set
     /// on entry and removed on return, so only ancestors on the current DFS
@@ -454,9 +455,8 @@ impl Solver {
     /// - `OptimalPush` / `Fast`: `g = pushes`.
     /// - `OptimalMove`: `g = moves`. Much slower because the search space is
     ///   bigger (player position matters).
-    /// - `Greedy`: `g = 0`, so `f = h`. Well-defined but converges poorly
-    ///   under iterative deepening — prefer [`Solver::a_star_search`] for
-    ///   greedy.
+    /// - `Greedy`: `g = 0`, so `f = h`. Well-defined but converges poorly under
+    ///   iterative deepening — prefer [`Solver::a_star_search`] for greedy.
     ///
     /// # Errors
     ///

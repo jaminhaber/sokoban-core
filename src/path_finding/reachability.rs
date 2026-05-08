@@ -45,7 +45,8 @@ pub fn reachable_area(
 ///
 /// # Returns
 ///
-/// A map `dist[pos] = d` containing all reachable positions and their distances.
+/// A map `dist[pos] = d` containing all reachable positions and their
+/// distances.
 ///
 /// # Complexity
 ///

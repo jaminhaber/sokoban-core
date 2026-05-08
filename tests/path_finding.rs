@@ -68,9 +68,7 @@ fn test_pushable_boxes() {
 #[test]
 fn reachable_area_in_open_room() {
     // 3×3 floor enclosed in walls — every interior cell is reachable.
-    let blocked = |p: IVector2| {
-        p.x < 1 || p.x > 3 || p.y < 1 || p.y > 3
-    };
+    let blocked = |p: IVector2| p.x < 1 || p.x > 3 || p.y < 1 || p.y > 3;
     let area = reachable_area(IVector2::new(2, 2), |p| !blocked(p));
     assert_eq!(area.len(), 9);
 }

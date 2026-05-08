@@ -11,8 +11,8 @@
 //!   can no longer enter or change.
 
 use crate::{
-    box_set::BoxSet, direction::Direction, map::Map, math::IVector2,
-    path_finding::reachable_area, tiles::Tiles,
+    box_set::BoxSet, direction::Direction, map::Map, math::IVector2, path_finding::reachable_area,
+    tiles::Tiles,
 };
 
 /// Returns `true` iff pushing a box to `box_position` closes a 2×2 block of
@@ -27,11 +27,7 @@ use crate::{
 ///
 /// Only the four 2×2 blocks that contain `box_position` are inspected, since
 /// no other 2×2 block could change because of this push.
-pub fn introduces_2x2_deadlock(
-    map: &Map,
-    box_position: IVector2,
-    box_positions: &BoxSet,
-) -> bool {
+pub fn introduces_2x2_deadlock(map: &Map, box_position: IVector2, box_positions: &BoxSet) -> bool {
     let (x, y) = (box_position.x, box_position.y);
 
     // The four 2×2 blocks containing (x, y), keyed by their bottom-left corner.
@@ -91,14 +87,14 @@ pub fn introduces_corral_deadlock(
     });
 
     // 2) The corral containing the just-pushed box: connected non-wall cells
-    //    outside `reachable`. The box's own cell is non-wall, so it belongs
-    //    to the corral.
+    //    outside `reachable`. The box's own cell is non-wall, so it belongs to the
+    //    corral.
     let corral = reachable_area(box_position, |p| {
         map.in_bounds(p) && !map[p].intersects(Tiles::Wall) && !reachable.contains(&p)
     });
 
-    // 3) If any box in the corral is currently pushable by the player from
-    //    a reachable cell, the corral isn't frozen — bail.
+    // 3) If any box in the corral is currently pushable by the player from a
+    //    reachable cell, the corral isn't frozen — bail.
     for &cell in &corral {
         if !box_positions.contains(&cell) {
             continue;
@@ -119,8 +115,8 @@ pub fn introduces_corral_deadlock(
         }
     }
 
-    // 4) Frozen corral. Deadlock iff any box in it is off-goal or any goal
-    //    in it is unfilled.
+    // 4) Frozen corral. Deadlock iff any box in it is off-goal or any goal in it is
+    //    unfilled.
     let off_goal_box = corral
         .iter()
         .any(|p| box_positions.contains(p) && !map[*p].intersects(Tiles::Goal));

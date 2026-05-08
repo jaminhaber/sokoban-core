@@ -1,14 +1,14 @@
 //! Deadlock detection — both static analysis (offline, from the map alone)
-//! and per-push runtime checks (called by the search after each candidate move).
+//! and per-push runtime checks (called by the search after each candidate
+//! move).
 //!
 //! # Module layout
 //!
 //! - `freeze`: the recursive freeze rule. A box is frozen iff both axes are
-//!   blocked by walls or other frozen boxes; a frozen group with any
-//!   off-goal member is a deadlock.
-//! - `static_analysis`: properties computed once from the map alone —
-//!   corner / groove dead squares, useless dead-end floors, fully-enclosed
-//!   box clusters.
+//!   blocked by walls or other frozen boxes; a frozen group with any off-goal
+//!   member is a deadlock.
+//! - `static_analysis`: properties computed once from the map alone — corner /
+//!   groove dead squares, useless dead-end floors, fully-enclosed box clusters.
 //! - `patterns`: per-push pattern checks — closed 2×2 blocks and the
 //!   conservative PI-corral check. These run after every candidate push to
 //!   prune branches the freeze recursion would miss.
@@ -204,10 +204,7 @@ mod tests {
         let new_player = IVector2::new(3, 1);
         let post_push = BoxSet::from_iter(map.dimensions().x, [pushed_to]);
         assert!(!introduces_corral_deadlock(
-            &map,
-            pushed_to,
-            &post_push,
-            new_player
+            &map, pushed_to, &post_push, new_player
         ));
     }
 
@@ -222,10 +219,7 @@ mod tests {
         assert!(map[pushed_to].intersects(Tiles::Goal));
 
         assert!(!introduces_corral_deadlock(
-            &map,
-            pushed_to,
-            &post_push,
-            new_player
+            &map, pushed_to, &post_push, new_player
         ));
     }
 }

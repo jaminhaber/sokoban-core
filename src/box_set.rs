@@ -142,7 +142,8 @@ impl BoxSet {
         self.width
     }
 
-    /// Returns an iterator over positions in this set that are not in the other set.
+    /// Returns an iterator over positions in this set that are not in the other
+    /// set.
     pub fn difference<'a>(&'a self, other: &'a BoxSet) -> impl Iterator<Item = IVector2> + 'a {
         self.iter().filter(move |pos| !other.contains(pos))
     }
@@ -312,7 +313,14 @@ mod tests {
 
     #[test]
     fn test_difference() {
-        let a = BoxSet::from_iter(8, [IVector2::new(1, 1), IVector2::new(2, 2), IVector2::new(3, 3)]);
+        let a = BoxSet::from_iter(
+            8,
+            [
+                IVector2::new(1, 1),
+                IVector2::new(2, 2),
+                IVector2::new(3, 3),
+            ],
+        );
         let b = BoxSet::from_iter(8, [IVector2::new(2, 2)]);
 
         let diff: Vec<IVector2> = a.difference(&b).collect();

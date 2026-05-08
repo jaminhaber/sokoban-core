@@ -9,11 +9,13 @@ use std::collections::HashSet;
 
 use crate::{box_set::BoxSet, direction::Direction, map::Map, math::IVector2, tiles::Tiles};
 
-/// Returns `true` iff pushing a box to `box_position` creates a freeze deadlock.
+/// Returns `true` iff pushing a box to `box_position` creates a freeze
+/// deadlock.
 ///
 /// A freeze deadlock occurs when a connected group of mutually immovable boxes
 /// (the *frozen component*) contains at least one box that is not on a goal:
-/// that box is permanently stuck off-goal, so the puzzle can no longer be solved.
+/// that box is permanently stuck off-goal, so the puzzle can no longer be
+/// solved.
 ///
 /// Importantly, it is not sufficient to check that the *pushed* box is on a
 /// goal. Pushing onto a goal can freeze a neighbor that is off-goal, which is

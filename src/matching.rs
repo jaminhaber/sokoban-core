@@ -1,9 +1,10 @@
 //! Minimum-cost bipartite matching utilities.
 //!
-//! Sokoban solvers often use a *minimum-cost perfect matching* between boxes and goals
-//! as an admissible heuristic. This module provides a small, reliable implementation
-//! based on subset dynamic programming, which is typically faster and easier to verify
-//! than a handwritten Hungarian algorithm for Sokoban-sized instances.
+//! Sokoban solvers often use a *minimum-cost perfect matching* between boxes
+//! and goals as an admissible heuristic. This module provides a small, reliable
+//! implementation based on subset dynamic programming, which is typically
+//! faster and easier to verify than a handwritten Hungarian algorithm for
+//! Sokoban-sized instances.
 
 /// Computes a minimum-cost perfect matching for a square `n × n` cost matrix
 /// stored row-major in a flat slice.
