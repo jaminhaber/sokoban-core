@@ -11,6 +11,162 @@ use utils::*;
 /// trivial to solve under any strategy.
 const TINY: &str = "#####\n#@$.#\n#####\n";
 
+// Takaken's Sokoban MinimumMovesSolver 1.2 reports proved minimum-move
+// solutions for these Microban levels.
+//
+// Source: https://computerpuzzle.net/english/sokoban/mms/microban_mms.txt
+const TAKAKEN_MICROBAN_MIN_MOVES: &[(usize, usize)] = &[
+    (1, 33),
+    (2, 16),
+    (3, 41),
+    (4, 23),
+    (5, 25),
+    (6, 107),
+    (7, 26),
+    (8, 97),
+    (9, 30),
+    (10, 89),
+    (11, 78),
+    (12, 49),
+    (13, 52),
+    (14, 51),
+    (15, 37),
+    (16, 100),
+    (17, 25),
+    (18, 71),
+    (19, 41),
+    (20, 50),
+    (21, 17),
+    (22, 47),
+    (23, 56),
+    (24, 35),
+    (25, 29),
+    (26, 41),
+    (27, 50),
+    (28, 33),
+    (29, 104),
+    (30, 21),
+    (31, 17),
+    (32, 35),
+    (33, 41),
+    (34, 30),
+    (35, 77),
+    (36, 156),
+    (37, 71),
+    (38, 37),
+    (39, 85),
+    (40, 20),
+    (41, 50),
+    (42, 47),
+    (43, 61),
+    (44, 1),
+    (45, 45),
+    (46, 47),
+    (47, 83),
+    (48, 64),
+    (49, 82),
+    (50, 76),
+    (51, 34),
+    (52, 26),
+    (53, 37),
+    (54, 82),
+    (55, 64),
+    (56, 23),
+    (57, 60),
+    (58, 44),
+    (59, 178),
+    (60, 169),
+    (61, 100),
+    (62, 64),
+    (63, 101),
+    (64, 95),
+    (65, 138),
+    (66, 69),
+    (67, 37),
+    (68, 98),
+    (69, 125),
+    (70, 78),
+    (71, 120),
+    (72, 105),
+    (73, 102),
+    (74, 117),
+    (75, 92),
+    (76, 181),
+    (77, 189),
+    (78, 135),
+    (79, 48),
+    (80, 131),
+    (81, 46),
+    (82, 52),
+    (83, 164),
+    (84, 201),
+    (85, 155),
+    (86, 105),
+    (87, 149),
+    (88, 195),
+    (89, 146),
+    (90, 64),
+    (91, 45),
+    (92, 126),
+    (94, 83),
+    (95, 25),
+    (96, 92),
+    (97, 164),
+    (98, 269),
+    (99, 349),
+    (100, 155),
+    (101, 79),
+    (102, 149),
+    (103, 35),
+    (104, 79),
+    (105, 75),
+    (106, 205),
+    (108, 238),
+    (109, 177),
+    (110, 51),
+    (111, 166),
+    (112, 261),
+    (113, 162),
+    (114, 227),
+    (115, 110),
+    (116, 63),
+    (117, 178),
+    (118, 172),
+    (119, 131),
+    (120, 183),
+    (121, 125),
+    (122, 245),
+    (123, 296),
+    (124, 245),
+    (125, 125),
+    (126, 87),
+    (127, 106),
+    (128, 88),
+    (129, 99),
+    (130, 102),
+    (131, 76),
+    (132, 155),
+    (133, 155),
+    (134, 244),
+    (135, 135),
+    (136, 134),
+    (137, 177),
+    (138, 193),
+    (139, 335),
+    (140, 290),
+    (141, 134),
+    (142, 76),
+    (143, 212),
+    (147, 146),
+    (148, 197),
+    (149, 94),
+    (150, 135),
+    (151, 125),
+    (152, 233),
+    (154, 429),
+    (155, 282),
+];
+
 fn solve(mut level: Level) {
     let map = level.map().clone();
     let solver = Solver::new(map, Strategy::Fast);
@@ -171,25 +327,34 @@ fn optimal_move_yields_no_more_moves_than_fast() {
 
 #[test]
 fn optimal_move_matches_takaken_microban_minimums() {
-    // Takaken's Sokoban MinimumMovesSolver 1.2 reports proved minimum-move
-    // solutions for 149 Microban levels. Keep this default test to a fast,
-    // representative prefix; expand it in ignored coverage tests if needed.
-    //
-    // Source: https://computerpuzzle.net/english/sokoban/mms/microban_mms.txt
-    let cases = [
-        (1, 33),
-        (2, 16),
-        (3, 41),
-        (4, 23),
-        (5, 25),
-        (9, 30),
-        (17, 25),
-        (21, 17),
-        (30, 21),
-        (44, 1),
-    ];
+    let fast_case_level_numbers = [1, 2, 3, 4, 5, 9, 17, 21, 30, 44];
 
-    for (level_no, expected_moves) in cases {
+    for &(level_no, expected_moves) in TAKAKEN_MICROBAN_MIN_MOVES
+        .iter()
+        .filter(|(level_no, _)| fast_case_level_numbers.contains(level_no))
+    {
+        let mut level = load_level_from_file("assets/Microban_155.xsb", level_no);
+        let actions = Solver::new(level.map().clone(), Strategy::OptimalMove)
+            .a_star_search()
+            .unwrap();
+
+        assert_eq!(
+            actions.moves(),
+            expected_moves,
+            "Microban #{level_no} should match Takaken's minimum-move result"
+        );
+
+        level
+            .do_actions(actions.iter().map(|a| a.direction()))
+            .unwrap();
+        assert!(level.is_solved(), "Microban #{level_no} replay failed");
+    }
+}
+
+#[test]
+#[ignore = "checks all 149 Takaken Microban minimum-move results; useful as a slower oracle run"]
+fn optimal_move_matches_all_takaken_microban_minimums() {
+    for &(level_no, expected_moves) in TAKAKEN_MICROBAN_MIN_MOVES {
         let mut level = load_level_from_file("assets/Microban_155.xsb", level_no);
         let actions = Solver::new(level.map().clone(), Strategy::OptimalMove)
             .a_star_search()

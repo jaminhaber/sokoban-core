@@ -29,6 +29,7 @@ Useful references for future solver work in this repo.
 - [Sokoban MinimumMovesSolver results](https://computerpuzzle.net/english/sokoban/mms/index.html)
   - Takaken's MinimumMovesSolver publishes proved minimum-move counts for several standard collections. The Microban result table is available as [`microban_mms.txt`](https://computerpuzzle.net/english/sokoban/mms/microban_mms.txt).
   - Most relevant to this repo: use the published counts as regression oracles for `Strategy::OptimalMove` without importing full, license-unclear solution strings.
+  - The full 149-result Microban count table is stored in `tests/solver.rs`; the default test checks a fast subset and an ignored test covers the whole table.
 
 - [Sokoban Reach and Code Performance](https://timallanwheeler.com/blog/2022/01/23/sokoban-reach-and-code-performance/)
   - Practical notes on state representation, reachability calculation, allocation reduction, and available-push generation.
