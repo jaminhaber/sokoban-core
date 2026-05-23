@@ -24,7 +24,7 @@ impl Collection {
 
     /// Returns the level at the given index.
     pub fn level(&self, index: usize) -> Option<Level> {
-        self.levels.get(index).map(|l| l.clone())
+        self.levels.get(index).cloned()
     }
 
     /// Returns a mutable reference to the level at the given index.
@@ -167,7 +167,7 @@ fn map_to_xsb(map: &Map) -> String {
     map = trim_empty_edges(map);
 
     // Convert to string and clean up
-    let map_str = map.to_string().replace('_', " ").replace('-', " ");
+    let map_str = map.to_string().replace(['_', '-'], " ");
 
     // Find minimum leading padding
     let min_padding = map_str

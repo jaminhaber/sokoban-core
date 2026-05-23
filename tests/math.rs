@@ -90,6 +90,7 @@ fn iter_mut_allows_mutation() {
 }
 
 #[test]
+#[allow(clippy::op_ref)]
 fn add_sub_neg_arithmetic() {
     let a = IVector2::new(3, 7);
     let b = IVector2::new(1, 4);

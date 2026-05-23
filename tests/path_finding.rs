@@ -47,13 +47,10 @@ fn test_box_move_waypoints() {
     assert_eq!(box_path.len() - 1, 124);
     assert_eq!(player_path.len() - 1, 5037);
 
-    // FIXME:
-    // let map = load_level_from_file("assets/Microban II_135.xsb", 135).into();
-    // let waypoints = box_move_waypoints(&map, Vec2::new(21, 36));
-    // let box_path = construct_box_path(Vec2::new(21, 36), Vec2::new(21,
-    // 37), &waypoints); assert_eq!(box_path.len() - 1, 591);
-    // let player_path = construct_player_path(&map, Vec2::new(21, 38),
-    // &box_path); assert_eq!(player_path.len() - 1, 1108);
+    // Microban II #135 exposes a limitation of `construct_box_path`: the
+    // waypoint table does not preserve exact predecessor states, so some
+    // heavily self-overlapping paths need a richer table than this helper
+    // currently returns.
 }
 
 #[test]
