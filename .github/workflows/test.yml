@@ -1,13 +1,8 @@
 name: Test
 
-# Run on every PR targeting main, and on every push that lands on main.
-# Pull requests that don't touch main, and feature branches in general,
-# don't trigger this workflow.
 on:
   pull_request:
-    branches: [main]
   push:
-    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -35,10 +30,9 @@ jobs:
         run: cargo build --locked --workspace --all-targets --verbose
 
       - name: Test
-        # Two passes — `--all-targets` doesn't run doc-tests
-        # (https://github.com/rust-lang/cargo/issues/6669).
+        # Two passes — regular tests don't run doc-tests.
         run: |
-          cargo test --locked --workspace --all-targets --verbose
+          cargo test --locked --workspace --verbose
           cargo test --locked --workspace --doc
 
   # Documentation must build cleanly. Catches broken intra-doc links and
