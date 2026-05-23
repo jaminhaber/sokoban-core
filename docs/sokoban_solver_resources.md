@@ -26,6 +26,10 @@ Useful references for future solver work in this repo.
 
 ## Implementation Notes
 
+- [Sokoban MinimumMovesSolver results](https://computerpuzzle.net/english/sokoban/mms/index.html)
+  - Takaken's MinimumMovesSolver publishes proved minimum-move counts for several standard collections. The Microban result table is available as [`microban_mms.txt`](https://computerpuzzle.net/english/sokoban/mms/microban_mms.txt).
+  - Most relevant to this repo: use the published counts as regression oracles for `Strategy::OptimalMove` without importing full, license-unclear solution strings.
+
 - [Sokoban Reach and Code Performance](https://timallanwheeler.com/blog/2022/01/23/sokoban-reach-and-code-performance/)
   - Practical notes on state representation, reachability calculation, allocation reduction, and available-push generation.
   - Most relevant to this repo: optimize `reachable_area_with_distances`, player normalization, and successor generation.
@@ -43,3 +47,4 @@ Useful references for future solver work in this repo.
 - Incremental or allocation-light reachability for successor generation.
 - Richer box waypoint predecessor tables for heavily self-overlapping replay/UI paths.
 - Optional solution post-optimizer that improves player moves without changing push count.
+- Larger ignored optimality regression tests against the full Takaken Microban table.

@@ -170,6 +170,45 @@ fn optimal_move_yields_no_more_moves_than_fast() {
 }
 
 #[test]
+fn optimal_move_matches_takaken_microban_minimums() {
+    // Takaken's Sokoban MinimumMovesSolver 1.2 reports proved minimum-move
+    // solutions for 149 Microban levels. Keep this default test to a fast,
+    // representative prefix; expand it in ignored coverage tests if needed.
+    //
+    // Source: https://computerpuzzle.net/english/sokoban/mms/microban_mms.txt
+    let cases = [
+        (1, 33),
+        (2, 16),
+        (3, 41),
+        (4, 23),
+        (5, 25),
+        (9, 30),
+        (17, 25),
+        (21, 17),
+        (30, 21),
+        (44, 1),
+    ];
+
+    for (level_no, expected_moves) in cases {
+        let mut level = load_level_from_file("assets/Microban_155.xsb", level_no);
+        let actions = Solver::new(level.map().clone(), Strategy::OptimalMove)
+            .a_star_search()
+            .unwrap();
+
+        assert_eq!(
+            actions.moves(),
+            expected_moves,
+            "Microban #{level_no} should match Takaken's minimum-move result"
+        );
+
+        level
+            .do_actions(actions.iter().map(|a| a.direction()))
+            .unwrap();
+        assert!(level.is_solved(), "Microban #{level_no} replay failed");
+    }
+}
+
+#[test]
 fn fast_weight_one_is_admissible() {
     // Fast with weight 1.0 reduces to plain A* in push space, so the push
     // count must equal OptimalPush.
