@@ -6,7 +6,7 @@
 //! of box positions and [`construct_player_path`] walks the player along
 //! that sequence using [`super::astar::find_path`].
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use rustc_hash::FxHashSet;
 
@@ -70,11 +70,11 @@ pub fn box_move_waypoints(
                 continue;
             }
 
-            if path
-                .insert((new_box_position, push_direction), new_cost)
-                .is_some()
-            {
-                continue;
+            match path.entry((new_box_position, push_direction)) {
+                Entry::Occupied(_) => continue,
+                Entry::Vacant(entry) => {
+                    entry.insert(new_cost);
+                }
             }
             deque.push_back((new_box_position, push_direction, new_cost));
         }
@@ -91,35 +91,40 @@ pub fn construct_box_path(
     waypoints: &HashMap<(IVector2, Direction), u64>,
 ) -> Vec<IVector2> {
     let mut path = Vec::new();
-    let mut current = to;
-    // FIXME: bails out early when the path doubles back on itself.
+    let (mut current, mut direction, mut cost) = Direction::iter()
+        .filter_map(|push_direction| {
+            waypoints
+                .get(&(to, push_direction))
+                .map(|&cost| (to, push_direction, cost))
+        })
+        .min_by_key(|&(_, _, cost)| cost)
+        .unwrap_or_else(|| panic!("no box waypoint reaches {to} from {from}"));
+
     while current != from {
         path.push(current);
-        let mut directions = Vec::new();
-        for push_direction in Direction::iter() {
-            if waypoints.get(&(current, push_direction)).is_some() {
-                directions.push(push_direction);
-            }
+
+        let predecessor = current - &direction.into();
+        if predecessor == from {
+            current = predecessor;
+            continue;
         }
-        let mut min_neighbor = IVector2::zeros();
-        let mut min_cost = u64::MAX;
-        for push_direction in &directions {
-            let neighbor = current - &(*push_direction).into();
-            if path.contains(&neighbor) {
-                continue;
-            }
-            for push_direction in Direction::iter() {
-                if let Some(cost) = waypoints.get(&(neighbor, push_direction)) {
-                    if *cost < min_cost {
-                        min_cost = *cost;
-                        min_neighbor = neighbor;
-                        break;
-                    }
-                }
-            }
-        }
-        debug_assert_ne!(min_cost, u64::MAX);
-        current = min_neighbor;
+
+        let previous_cost = cost
+            .checked_sub(1)
+            .expect("non-initial box waypoint must have positive cost");
+        let previous_direction = Direction::iter()
+            .find(|&push_direction| {
+                waypoints.get(&(predecessor, push_direction)) == Some(&previous_cost)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "box waypoint chain from {from} to {to} is missing {predecessor} at cost {previous_cost}"
+                )
+            });
+
+        current = predecessor;
+        direction = previous_direction;
+        cost = previous_cost;
     }
     path.push(from);
     path.reverse();

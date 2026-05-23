@@ -105,6 +105,10 @@ use std::{
 /// 520 MB. Tune up if you have memory headroom and search hard levels.
 const HEURISTIC_CACHE_LIMIT: usize = 1_000_000;
 
+type LowerBounds = FxHashMap<IVector2, i32>;
+type DistanceMatrix = FxHashMap<IVector2, FxHashMap<IVector2, i32>>;
+type PushDistances = (LowerBounds, DistanceMatrix);
+
 /// A solver for the Sokoban problem.
 ///
 /// Construct with [`Solver::new`], optionally chain builder methods, then
@@ -147,10 +151,7 @@ pub struct Solver {
     //
     // - `.0` is `lower_bounds`: minimum pushes from pos to any goal in the abstraction.
     // - `.1` is `distance_matrix`: minimum pushes from pos to that goal in the abstraction.
-    push_distances: OnceCell<(
-        FxHashMap<IVector2, i32>,
-        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
-    )>,
+    push_distances: OnceCell<PushDistances>,
 
     // tunnel macros keyed by (box_position, push_direction)
     tunnels: OnceCell<FxHashSet<(IVector2, Direction)>>,
@@ -316,12 +317,7 @@ impl Solver {
     /// Returns the cached `(lower_bounds, distance_matrix)` pair, computing it
     /// on first access. Both halves come from a single pass of
     /// [`preprocess::compute_push_distances`] so the BFS work runs once.
-    fn push_distances(
-        &self,
-    ) -> &(
-        FxHashMap<IVector2, i32>,
-        FxHashMap<IVector2, FxHashMap<IVector2, i32>>,
-    ) {
+    fn push_distances(&self) -> &PushDistances {
         self.push_distances
             .get_or_init(|| preprocess::compute_push_distances(&self.map))
     }

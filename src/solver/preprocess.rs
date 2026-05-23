@@ -69,10 +69,7 @@ pub(super) fn compute_push_distances(
         }
 
         for (pos, d) in dist_to_goal {
-            distance_matrix
-                .entry(pos)
-                .or_insert_with(FxHashMap::default)
-                .insert(goal, d);
+            distance_matrix.entry(pos).or_default().insert(goal, d);
         }
     }
 
